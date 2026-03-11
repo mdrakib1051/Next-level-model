@@ -1,543 +1,274 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-
-<title>Voxel Architect v11.0 - The Ultimate Hybrid</title>
-
+<title>Voxel Architect v11.5 - Hybrid with Zoom</title>
 <style>
-
-body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-
-#input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
-
-#three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
-
-#biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
-
-#ui {
-
-position: absolute; top: 20px; left: 20px; z-index: 100;
-
-color: #00f0ff; font-weight: bold; font-size: 13px;
-
-text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
-
-background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
-
-}
-
-.stat-val { color: #fff; }
-
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
+    #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
+    #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
+    #ui {
+        position: absolute; top: 20px; left: 20px; z-index: 100;
+        color: #00f0ff; font-weight: bold; font-size: 13px;
+        text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
+        background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
+    }
+    .stat-val { color: #fff; }
 </style>
-
 </head>
-
 <body>
-
 <div id="ui">
-
-<div>CORE_SYNC: HYBRID_OS_v11.0</div>
-
-<div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
-
-<div>VOXELS: <span id="count" class="stat-val">0</span></div>
-
-<hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-
-<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | 2 PALMS: ROTATE</div>
-
-<div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
-
-<div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
-
-<div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE</div>
-
+    <div>CORE_SYNC: HYBRID_OS_v11.5</div>
+    <div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
+    <div>VOXELS: <span id="count" class="stat-val">0</span></div>
+    <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
+    <div style="font-size: 9px; color: #ff3333;">2 FISTS (FAR/NEAR): ZOOM | HOLD FISTS: RESET</div>
+    <div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
+    <div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
+    <div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE</div>
 </div>
 
-
-
 <video id="input_video" autoplay playsinline></video>
-
 <canvas id="three_canvas"></canvas>
-
 <canvas id="biometric_canvas"></canvas>
 
-
-
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-
-
 <script>
-
 const videoElement = document.getElementById('input_video');
-
 const bioCanvas = document.getElementById('biometric_canvas');
-
 const bioCtx = bioCanvas.getContext('2d');
-
 const modeEl = document.getElementById('mode');
-
 const countEl = document.getElementById('count');
 
-
-
 // --- THREE.JS ENGINE ---
-
 const scene = new THREE.Scene();
-
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
-
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-
-
 const voxelGroup = new THREE.Group();
-
 scene.add(voxelGroup);
-
 const currentSketch = new THREE.Group();
-
 voxelGroup.add(currentSketch);
 
-
-
 const gridSize = 1.2;
-
 const placedVoxels = new Map();
-
 const crosshair = new THREE.Mesh(
-
     new THREE.BoxGeometry(gridSize, gridSize, gridSize),
-
     new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.5 })
-
 );
-
 scene.add(crosshair);
 
-
-
 scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-
 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-
 sun.position.set(5, 5, 5);
-
 scene.add(sun);
-
-camera.position.z = 20;
-
-
+camera.position.z = 25;
 
 // --- STATE VARIABLES ---
-
 let gravityEnabled = false;
-
 let rainbowActive = false;
-
 let gravityTimer = 0;
-
 let restoreTimer = 0;
-
 const GRAVITY_HOLD = 800;
-
 let globalColorIndex = 0;
-
 let leftPeaceWasActive = false;
-
 const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500, 0x00ff7f, 0x40e0d0];
 
-
-
-let isGrabbing = false, grabTimer = 0;
-
-let grabOffset = new THREE.Vector3();
-
 let isBuilding = false, buildTimer = 0;
-
-let isErasing = false, eraseTimer = 0;
-
-let resetTimer = 0, rotateTimer = 0;
-
-let startPinchPos = null, activeAxis = null;
-
+let eraseTimer = 0;
+let resetTimer = 0;
+let initialHandDist = null, initialVoxelScale = 1;
 let sketchKeys = new Set();
-
-const GRAB_HOLD = 500;
-
 const INTENT_HOLD = 500;
-
-const RESET_HOLD = 1000;
-
-const ROTATE_HOLD = 1000;
-
+const RESET_HOLD = 1500;
 const pinchThreshold = 0.05;
 
-
-
-// --- BIOMETRIC HUD RENDERER ---
-
 function drawCyberHand(ctx, landmarks) {
-
     ctx.strokeStyle = "rgba(0, 240, 255, 0.5)";
-
     ctx.lineWidth = 2;
-
     const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-
     CONNECTIONS.forEach(([a, b]) => {
-
         ctx.beginPath();
-
         ctx.moveTo(landmarks[a].x * bioCanvas.width, landmarks[a].y * bioCanvas.height);
-
         ctx.lineTo(landmarks[b].x * bioCanvas.width, landmarks[b].y * bioCanvas.height);
-
         ctx.stroke();
-
     });
-
-    landmarks.forEach((pt, i) => {
-
-        ctx.fillStyle = [4, 8, 12, 16, 20].includes(i) ? "#fff" : "#00f0ff";
-
-        ctx.beginPath();
-
-        ctx.arc(pt.x * bioCanvas.width, pt.y * bioCanvas.height, 3, 0, Math.PI*2);
-
-        ctx.fill();
-
-    });
-
 }
-
-
 
 function drawHUDCircle(ctx, x, y, progress, color) {
-
     ctx.beginPath();
-
     ctx.arc(x, y, 35, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * progress));
-
     ctx.lineWidth = 5; ctx.strokeStyle = color; ctx.stroke();
-
 }
-
-
 
 function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
 
-
-
 function onResults(results) {
-
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
-
     crosshair.visible = false;
-
+    modeEl.innerText = "ACTIVE";
     if (!results.multiHandLandmarks) return;
 
-
-
     let lHand = null, rHand = null;
-
     results.multiHandedness.forEach((hand, idx) => {
-
         const landmarks = results.multiHandLandmarks[idx];
-
         drawCyberHand(bioCtx, landmarks);
-
         if(hand.label === 'Left') lHand = landmarks;
-
         if(hand.label === 'Right') rHand = landmarks;
-
     });
 
-
-
-    // --- GLOBAL COMMANDS (2 HANDS) ---
-
+    // --- ZOOM & RESET (2 FISTS) ---
     if (lHand && rHand) {
-
         const lFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
-
         const rFist = rHand[8].y > rHand[6].y && rHand[12].y > rHand[10].y;
 
         if (lFist && rFist) {
-
+            // Zoom Logic
+            const d = getDist(lHand[9], rHand[9]);
+            if (initialHandDist === null) { initialHandDist = d; initialVoxelScale = voxelGroup.scale.x; }
+            else {
+                let s = (d / initialHandDist) * initialVoxelScale;
+                voxelGroup.scale.set(s, s, s);
+            }
+            
+            // Reset Logic (Hold Fists)
             resetTimer += 16;
-
             drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, resetTimer/RESET_HOLD, "#ff0055");
-
-            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText="RESET COMPLETE"; }
-
-            return;
-
-        } else resetTimer = 0;
-
+            if (resetTimer >= RESET_HOLD) { 
+                voxelGroup.position.set(0,0,0); 
+                voxelGroup.scale.set(1,1,1); 
+                initialHandDist = null;
+                modeEl.innerText="RESET COMPLETE"; 
+            }
+            return; 
+        } else {
+            resetTimer = 0;
+            initialHandDist = null;
+        }
     }
 
-
-
-    // --- LEFT HAND LOGIC ---
-
+    // --- LEFT HAND: COLOR & GRAVITY ---
     if (lHand) {
-
         const curled = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
-
         const isPeace = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y;
-
         
-
-        // Color Toggle
-
         if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
-
         else if (!isPeace) leftPeaceWasActive = false;
 
-
-
-        // Gravity/Restore
-
-        if (lHand[4].y > lHand[3].y && curled) { // Thumb Down
-
+        if (lHand[4].y > lHand[3].y && curled) { 
             gravityTimer += 16;
-
-            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, gravityTimer/GRAVITY_HOLD, "#ff00ff");
-
             if (gravityTimer >= GRAVITY_HOLD) { gravityEnabled = true; initiateGravityFall(); }
-
         } else gravityTimer = 0;
 
-
-
-        if (lHand[4].y < lHand[3].y && curled) { // Thumb Up
-
+        if (lHand[4].y < lHand[3].y && curled) { 
             restoreTimer += 16;
-
-            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, restoreTimer/GRAVITY_HOLD, "#00ff88");
-
             if (restoreTimer >= GRAVITY_HOLD) gravityEnabled = false;
-
         } else restoreTimer = 0;
-
     }
 
-
-
-    // --- RIGHT HAND LOGIC ---
-
+    // --- RIGHT HAND: BUILD, ERASE & DISCO ---
     if (rHand) {
-
         const isPeace = rHand[8].y < rHand[6].y && rHand[12].y < rHand[10].y && rHand[16].y > rHand[14].y;
-
         rainbowActive = isPeace;
 
-
-
         const worldPos = new THREE.Vector3((0.5 - rHand[8].x) * 25, (0.5 - rHand[8].y) * 18, 0);
-
         const localPos = voxelGroup.worldToLocal(worldPos.clone());
-
         let gx = Math.round(localPos.x / gridSize) * gridSize;
-
         let gy = Math.round(localPos.y / gridSize) * gridSize;
 
-
-
-        const isPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
-
+        const rPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
         const lPinching = lHand && getDist(lHand[4], lHand[8]) < pinchThreshold;
 
-
-
         if (lPinching && !isPeace) { // Erase
-
             eraseTimer += 16;
-
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, eraseTimer/INTENT_HOLD, "#ff3333");
-
             if (eraseTimer >= INTENT_HOLD) {
-
                 const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
-
                 if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
-
             }
-
-        } else if (isPinching) { // Build
-
+        } else if (rPinching) { // Build
             buildTimer += 16;
-
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, buildTimer/INTENT_HOLD, "#00ffcc");
-
             if (buildTimer >= INTENT_HOLD) {
-
-                if (!isBuilding) { startPinchPos = {x:gx, y:gy}; isBuilding = true; sketchKeys.clear(); }
-
+                if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
                 addSketchVoxel(gx, gy, 0);
-
             }
-
         } else {
-
             if (isBuilding) commitVoxels();
-
             isBuilding = false; buildTimer = 0; eraseTimer = 0;
-
         }
 
-
-
-        if (isBuilding || buildTimer > 0 || eraseTimer > 0) {
-
+        if (isPinching || buildTimer > 0 || eraseTimer > 0) {
             crosshair.visible = true;
-
             crosshair.position.copy(voxelGroup.localToWorld(new THREE.Vector3(gx, gy, 0)));
-
             crosshair.material.color.set(eraseTimer > 0 ? 0xff3333 : colorPalette[globalColorIndex]);
-
         }
-
     }
-
     countEl.innerText = placedVoxels.size;
-
 }
-
-
 
 function initiateGravityFall() {
-
     placedVoxels.forEach(v => { v.velocity.set((Math.random()-0.5)*0.8, 0.4+Math.random()*0.5, (Math.random()-0.5)*0.8); });
-
 }
-
-
 
 function addSketchVoxel(x, y, z) {
-
     const key = `${x.toFixed(1)},${y.toFixed(1)},${z.toFixed(1)}`;
-
     if (sketchKeys.has(key) || placedVoxels.has(key)) return;
-
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridSize), new THREE.MeshBasicMaterial({ color: colorPalette[globalColorIndex], wireframe: true }));
-
     mesh.position.set(x, y, z);
-
     currentSketch.add(mesh);
-
     sketchKeys.add(key);
-
 }
-
-
 
 function commitVoxels() {
-
     while(currentSketch.children.length > 0) {
-
         const f = currentSketch.children[0];
-
         const cube = createFinalCube(f.position.x, f.position.y, f.position.z);
-
         voxelGroup.add(cube);
-
         placedVoxels.set(`${f.position.x.toFixed(1)},${f.position.y.toFixed(1)},0.0`, cube);
-
         currentSketch.remove(f);
-
     }
-
 }
-
-
 
 function createFinalCube(x, y, z) {
-
     const g = new THREE.BoxGeometry(gridSize*0.95, gridSize*0.95, gridSize*0.95);
-
     const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5, transparent: true, opacity: 0.8 });
-
     const mesh = new THREE.Mesh(g, m);
-
     mesh.position.set(x, y, z);
-
     mesh.origin = new THREE.Vector3(x, y, z);
-
     mesh.velocity = new THREE.Vector3(0,0,0);
-
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })));
-
     return mesh;
-
 }
-
-
 
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-
 hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
-
 hands.onResults(onResults);
-
 new Camera(videoElement, { onFrame: async () => { 
-
     bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; 
-
     await hands.send({image: videoElement}); 
-
 }, width: 1280, height: 720 }).start();
 
-
-
 function animate() {
-
     requestAnimationFrame(animate);
-
     if (rainbowActive) {
-
-        placedVoxels.forEach(v => { v.material.emissive.setHSL(Math.random(), 1, 0.5); v.material.emissiveIntensity = 2; });
-
+        placedVoxels.forEach(v => { v.material.emissive.setHSL((Date.now()%2000)/2000, 1, 0.5); v.material.emissiveIntensity = 1.5; });
     } else {
-
         placedVoxels.forEach(v => { v.material.emissive.setHex(colorPalette[globalColorIndex]); v.material.emissiveIntensity = 0.5; });
-
     }
-
     placedVoxels.forEach((v) => {
-
         if (gravityEnabled) {
-
             v.velocity.y -= 0.025;
-
             v.position.add(v.velocity);
-
             if (v.position.y < -10) { v.position.y = -10; v.velocity.y *= -0.2; }
-
-        } else { v.position.lerp(v.origin, 0.1); v.velocity.set(0,0,0); }
-
+        } else { v.position.lerp(v.origin, 0.15); v.velocity.set(0,0,0); }
     });
-
     renderer.render(scene, camera);
-
 }
-
 animate();
-
 </script>
-
 </body>
-
 </html>
