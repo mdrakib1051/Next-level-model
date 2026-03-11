@@ -2,41 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Voxel Architect - Ultimate Hybrid v7.0</title>
+    <title>Voxel Architect - Absolute Cyber Edition v8.0</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-        #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.7; }
+        #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.6; }
         #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
         #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
         
-        /* Cyber Scan Overlay */
         #scanner_overlay {
             position: absolute; width: 100vw; height: 100vh; z-index: 2;
-            background: linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
-            background-size: 40px 40px; pointer-events: none;
+            background: linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px; pointer-events: none;
         }
 
         #ui { 
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            color: #00f0ff; font-weight: bold; font-size: 13px;
-            text-shadow: 0 0 10px #00f0ff; background: rgba(0,0,0,0.7);
-            padding: 15px; border: 1px solid #00f0ff;
+            color: #00f0ff; font-weight: bold; font-size: 12px;
+            text-shadow: 0 0 10px #00f0ff; background: rgba(0,0,0,0.8);
+            padding: 15px; border-left: 3px solid #00f0ff;
         }
-        .stat-val { color: #fff; }
     </style>
 </head>
 <body>
     <div id="scanner_overlay"></div>
     <div id="ui">
-        <div>CORE_SYNC: HYBRID_OS_v7.0</div>
-        <div>STATE: <span id="mode" class="stat-val">READY</span></div>
-        <div>VOXELS: <span id="count" class="stat-val">0</span></div>
-        <hr style="border:0; border-top:1px solid #00f0ff; margin:10px 0;">
-        <div style="font-size: 9px; color: #ff3333;">L-FIST + R-PINCH: ERASE</div>
-        <div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | L-THUMB UP: RESTORE</div>
-        <div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
-        <div style="font-size: 9px; color: #ffbb00;">2 FISTS: RESET | 2 PALMS: ROTATE</div>
+        <div>SYSTEM_OS: v8.0_ULTIMATE</div>
+        <div>STATUS: <span id="mode" style="color:#fff">CALIBRATING</span></div>
+        <div>TOTAL_VOXELS: <span id="count" style="color:#fff">0</span></div>
+        <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
+        <div style="font-size: 9px; color: #00ffcc;">• R-PINCH: BUILD | L-FIST + R-PINCH: ERASE</div>
+        <div style="font-size: 9px; color: #ff00ff;">• L-THUMB: GRAVITY CONTROL</div>
+        <div style="font-size: 9px; color: #00ff00;">• PEACE SIGN: COLOR & DISCO</div>
     </div>
 
     <video id="input_video" autoplay playsinline></video>
@@ -63,28 +60,45 @@
         scene.add(voxelGroup);
         camera.position.z = 25;
 
-        // Lighting
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
         const sun = new THREE.DirectionalLight(0x00f0ff, 1);
         sun.position.set(5, 10, 5);
         scene.add(sun);
 
         let gravityEnabled = false;
-        let rainbowActive = false;
         let globalColorIndex = 0;
-        const colorPalette = [0x00f0ff, 0xff0000, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500];
+        const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0x9933ff];
         const placedVoxels = new Map();
-        let resetTimer = 0;
 
-        function createGlassVoxel(x, y, z) {
+        // হাতের লাইনগুলো আঁকার ফাংশন
+        function drawHandMesh(ctx, landmarks) {
+            ctx.strokeStyle = "rgba(0, 240, 255, 0.5)";
+            ctx.lineWidth = 2;
+            const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+            
+            connections.forEach(([a, b]) => {
+                ctx.beginPath();
+                ctx.moveTo(landmarks[a].x * bioCanvas.width, landmarks[a].y * bioCanvas.height);
+                ctx.lineTo(landmarks[b].x * bioCanvas.width, landmarks[b].y * bioCanvas.height);
+                ctx.stroke();
+            });
+
+            landmarks.forEach((p, i) => {
+                ctx.fillStyle = i === 8 || i === 4 ? "#fff" : "#00f0ff";
+                ctx.beginPath();
+                ctx.arc(p.x * bioCanvas.width, p.y * bioCanvas.height, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function createVoxel(x, y, z) {
             const geo = new THREE.BoxGeometry(1.1, 1.1, 1.1);
             const mat = new THREE.MeshPhongMaterial({ 
                 color: colorPalette[globalColorIndex], transparent: true, opacity: 0.5,
                 emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.3
             });
             const mesh = new THREE.Mesh(geo, mat);
-            const edges = new THREE.EdgesGeometry(geo);
-            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] }));
+            const line = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] }));
             mesh.add(line);
             mesh.position.set(x, y, z);
             mesh.origin = new THREE.Vector3(x, y, z);
@@ -98,44 +112,46 @@
 
             let lHand = null, rHand = null;
             results.multiHandedness.forEach((hand, i) => {
-                if(hand.label === 'Left') lHand = results.multiHandLandmarks[i];
-                if(hand.label === 'Right') rHand = results.multiHandLandmarks[i];
+                const landmarks = results.multiHandLandmarks[i];
+                drawHandMesh(bioCtx, landmarks);
+                if(hand.label === 'Left') lHand = landmarks;
+                if(hand.label === 'Right') rHand = landmarks;
             });
 
-            // 2 Hand Reset Logic
-            if (lHand && rHand) {
-                if (lHand[8].y > lHand[6].y && rHand[8].y > rHand[6].y) {
-                    resetTimer += 16;
-                    if(resetTimer > 1000) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText = "SYSTEM RESET"; }
-                } else resetTimer = 0;
-            }
-
-            // Left Hand Controls (Gravity, Color)
             if (lHand) {
                 const isFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
-                if (isFist && lHand[4].y > lHand[3].y) { gravityEnabled = true; modeEl.innerText = "GRAVITY: ON"; }
-                if (isFist && lHand[4].y < lHand[3].y) { gravityEnabled = false; modeEl.innerText = "GRAVITY: OFF"; }
+                if (isFist) {
+                    if (lHand[4].y > lHand[3].y) gravityEnabled = true;
+                    if (lHand[4].y < lHand[3].y) gravityEnabled = false;
+                }
+                // Color Change: Peace Sign
+                if (lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y) {
+                    globalColorIndex = (globalColorIndex + 1) % colorPalette.length;
+                }
             }
 
-            // Right Hand Controls (Build/Erase)
             if (rHand) {
-                const px = Math.round(((0.5 - rHand[8].x) * 35) / 1.2) * 1.2;
-                const py = Math.round(((0.5 - rHand[8].y) * 25) / 1.2) * 1.2;
-                const pz = Math.round((-rHand[8].z * 20) / 1.2) * 1.2;
-                const key = `${px},${py},${pz}`;
+                const gx = Math.round(((0.5 - rHand[8].x) * 35) / 1.2) * 1.2;
+                const gy = Math.round(((0.5 - rHand[8].y) * 25) / 1.2) * 1.2;
+                const pz = Math.round((-rHand[8].z * 25) / 1.2) * 1.2;
+                const key = `${gx},${gy},${pz}`;
 
-                const isPinching = Math.hypot(rHand[8].x - rHand[4].x, rHand[8].y - rHand[4].y) < 0.05;
-                const isLeftFist = lHand && lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
+                const pinching = Math.hypot(rHand[8].x - rHand[4].x, rHand[8].y - rHand[4].y) < 0.05;
+                const isEraseMode = lHand && lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
 
-                if (isPinching) {
-                    if (isLeftFist) {
-                        if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); modeEl.innerText = "ERASING"; }
+                if (pinching) {
+                    if (isEraseMode) {
+                        if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
+                        modeEl.innerText = "ERASING";
                     } else {
                         if (!placedVoxels.has(key)) {
-                            const v = createGlassVoxel(px, py, pz);
-                            voxelGroup.add(v); placedVoxels.set(key, v); modeEl.innerText = "BUILDING";
+                            const v = createVoxel(gx, gy, pz);
+                            voxelGroup.add(v); placedVoxels.set(key, v);
                         }
+                        modeEl.innerText = "BUILDING";
                     }
+                } else {
+                    modeEl.innerText = "SCANNING";
                 }
             }
             countEl.innerText = placedVoxels.size;
@@ -152,7 +168,7 @@
         function animate() {
             requestAnimationFrame(animate);
             placedVoxels.forEach(v => {
-                if (gravityEnabled) { v.velocity.y -= 0.01; v.position.add(v.velocity); if(v.position.y < -10) v.velocity.y = 0; }
+                if (gravityEnabled) { v.velocity.y -= 0.02; v.position.add(v.velocity); if(v.position.y < -12) v.velocity.y = 0; }
                 else { v.position.lerp(v.origin, 0.1); v.velocity.set(0,0,0); }
             });
             renderer.render(scene, camera);
