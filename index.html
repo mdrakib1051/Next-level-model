@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v11.0 - Original Hybrid with Zoom</title>
+<title>Voxel Architect v11.0 - Hybrid Refresh Edition</title>
 <style>
 body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
@@ -14,6 +14,9 @@ color: #00f0ff; font-weight: bold; font-size: 13px;
 text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
 background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 }
+/* Refresh Bar Style */
+#refresh_container { position: absolute; bottom: 0; left: 0; width: 100%; height: 5px; background: rgba(0,0,0,0.5); z-index: 101; }
+#refresh_bar { width: 0%; height: 100%; background: #00f0ff; box-shadow: 0 0 10px #00f0ff; }
 .stat-val { color: #fff; }
 </style>
 </head>
@@ -29,6 +32,8 @@ background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 <div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE</div>
 </div>
 
+<div id="refresh_container"><div id="refresh_bar"></div></div>
+
 <video id="input_video" autoplay playsinline></video>
 <canvas id="three_canvas"></canvas>
 <canvas id="biometric_canvas"></canvas>
@@ -43,6 +48,7 @@ const bioCanvas = document.getElementById('biometric_canvas');
 const bioCtx = bioCanvas.getContext('2d');
 const modeEl = document.getElementById('mode');
 const countEl = document.getElementById('count');
+const refreshBar = document.getElementById('refresh_bar');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -68,7 +74,6 @@ sun.position.set(5, 5, 5);
 scene.add(sun);
 camera.position.z = 25;
 
-// --- ORIGINALS + ZOOM STATE ---
 let gravityEnabled = false;
 let rainbowActive = false;
 let globalColorIndex = 0;
@@ -78,8 +83,8 @@ const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff
 let isBuilding = false, buildTimer = 0;
 let eraseTimer = 0;
 let resetTimer = 0;
-let initialHandDist = null; // For Zoom
-let initialVoxelScale = 1;  // For Zoom
+let initialHandDist = null;
+let initialVoxelScale = 1;
 let sketchKeys = new Set();
 const INTENT_HOLD = 500;
 const RESET_HOLD = 1000;
@@ -96,6 +101,11 @@ function drawCyberHand(ctx, landmarks) {
 function onResults(results) {
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
     crosshair.visible = false;
+    
+    // Refresh Bar logic: loops every 1 sec
+    let progress = (Date.now() % 1000) / 10;
+    refreshBar.style.width = progress + "%";
+
     if (!results.multiHandLandmarks) return;
 
     let lHand = null, rHand = null;
@@ -106,7 +116,6 @@ function onResults(results) {
         if(hand.label === 'Right') rHand = landmarks;
     });
 
-    // --- ZOOM (2 PALMS) & RESET (2 FISTS) ---
     if (lHand && rHand) {
         const lFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const rFist = rHand[8].y > rHand[6].y && rHand[12].y > rHand[10].y;
@@ -115,7 +124,7 @@ function onResults(results) {
 
         if (lFist && rFist) {
             resetTimer += 16;
-            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.scale.set(1,1,1); modeEl.innerText="RESET DONE"; }
+            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.scale.set(1,1,1); modeEl.innerText="RESET"; }
             return;
         } else resetTimer = 0;
 
@@ -129,7 +138,6 @@ function onResults(results) {
         } else initialHandDist = null;
     }
 
-    // --- REST OF ORIGINAL v11.0 LOGIC ---
     if (lHand) {
         const curled = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const isPeace = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y;
@@ -159,10 +167,9 @@ function onResults(results) {
             buildTimer += 16;
             if (buildTimer >= INTENT_HOLD) {
                 if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
-                addSketchVoxel(gx, gy, 0);
+                addVoxel(gx, gy, 0);
             }
         } else {
-            if (isBuilding) commitVoxels();
             isBuilding = false; buildTimer = 0; eraseTimer = 0;
         }
 
@@ -175,26 +182,9 @@ function onResults(results) {
     countEl.innerText = placedVoxels.size;
 }
 
-function addSketchVoxel(x, y, z) {
+function addVoxel(x, y, z) {
     const key = `${x.toFixed(1)},${y.toFixed(1)},${z.toFixed(1)}`;
-    if (sketchKeys.has(key) || placedVoxels.has(key)) return;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridSize), new THREE.MeshBasicMaterial({ color: colorPalette[globalColorIndex], wireframe: true }));
-    mesh.position.set(x, y, z);
-    currentSketch.add(mesh);
-    sketchKeys.add(key);
-}
-
-function commitVoxels() {
-    while(currentSketch.children.length > 0) {
-        const f = currentSketch.children[0];
-        const cube = createFinalCube(f.position.x, f.position.y, f.position.z);
-        voxelGroup.add(cube);
-        placedVoxels.set(`${f.position.x.toFixed(1)},${f.position.y.toFixed(1)},0.0`, cube);
-        currentSketch.remove(f);
-    }
-}
-
-function createFinalCube(x, y, z) {
+    if (placedVoxels.has(key)) return;
     const g = new THREE.BoxGeometry(gridSize*0.95, gridSize*0.95, gridSize*0.95);
     const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5, transparent: true, opacity: 0.8 });
     const mesh = new THREE.Mesh(g, m);
@@ -202,7 +192,8 @@ function createFinalCube(x, y, z) {
     mesh.origin = new THREE.Vector3(x, y, z);
     mesh.velocity = new THREE.Vector3(0,0,0);
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })));
-    return mesh;
+    voxelGroup.add(mesh);
+    placedVoxels.set(key, mesh);
 }
 
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
