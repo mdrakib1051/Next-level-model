@@ -1,22 +1,61 @@
-# VolexScratch 🧊🖐️
-
-A gesture-controlled 3D voxel editor built **from scratch** for the web.  
-**No Python. No OpenCV. No Server.** Pure Browser Power.
-
-## 🚀 Key Features
-- **Intuitive Gestures**: Create, erase, and move 3D blocks with hand movements.
-- **Physics Engine**: Thumb-down to trigger gravity (Burst), Thumb-up to restore.
-- **Visual Effects**: Peace sign for Disco Mode & Color cycling.
-- **Z-Axis Control**: Build in true 3D space with depth.
-
-## 🖐️ Gesture Guide
-<img width="1000" height="425" alt="image" src="https://github.com/user-attachments/assets/8cfe4964-b275-4bf6-a0c7-0cefa6ce037a" />
+# VolexScratch
 
 
-| Gesture | Action |
-| :--- | :--- |
-| Pinch | Draw Block |
-| Fist | Move Model |
-| Two Palms | Rotate Scene |
-| Peace Sign | Color/Disco Mode |
-| Thumb Down | Gravity Burst |
+
+A gesture-controlled 3D voxel editor built **from scratch** for the web.
+
+No Python runtime. No OpenCV backend. Just pure **HTML + CSS + Vanilla JavaScript + Three.js**.
+
+
+
+This project explores how far real-time interaction can be pushed directly inside the browser.
+
+
+
+---
+
+
+
+## ✨ Features
+
+
+
+- 🖐️ Real-time hand gesture interaction
+
+- 🧊 3D voxel creation and manipulation
+
+- 🔄 Gesture-based rotation, movement, reset
+
+- 🧠 Custom gesture logic (no OpenCV dependency)
+
+- 🌐 Runs entirely in the browser
+
+- ⚡ Optimized for smooth real-time performance
+
+
+
+---
+
+
+
+## 🛠 Tech Stack
+
+
+
+- **HTML5** – Structure
+
+- **CSS3** – UI styling
+
+- **JavaScript (Vanilla)** – Core logic
+
+- **Three.js** – 3D rendering
+
+- **Web APIs** – Real-time interaction
+
+
+
+> No Python. No server. No frameworks. Everything runs locally.
+
+
+
+---
