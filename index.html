@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v11.0 - The Ultimate Hybrid</title>
+<title>Voxel Architect v11.0 - Right-Hand Build</title>
 <style>
 body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
@@ -20,13 +20,14 @@ background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 <body>
 <div id="ui">
 <div>CORE_SYNC: HYBRID_OS_v11.0</div>
-<div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
+<div>STATE: <span id="mode" class="stat-val">ACTIVE</span></div>
 <div>VOXELS: <span id="count" class="stat-val">0</span></div>
 <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | 2 PALMS: ROTATE</div>
-<div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
-<div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
-<div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE</div>
+<div style="font-size: 10px; color: #00ffcc;">RIGHT PINCH: BUILD (ডান হাত)</div>
+<div style="font-size: 10px; color: #ff3333;">LEFT PINCH + R-POINT: ERASE</div>
+<div style="font-size: 10px; color: #00ff00;">LEFT PEACE: CHANGE COLOR</div>
+<div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: FALL | UP: RESTORE</div>
+<div style="font-size: 9px; color: #ffffff;">2 FISTS: RESET SYSTEM</div>
 </div>
 
 <video id="input_video" autoplay playsinline></video>
@@ -72,27 +73,17 @@ camera.position.z = 20;
 // --- STATE VARIABLES ---
 let gravityEnabled = false;
 let rainbowActive = false;
-let gravityTimer = 0;
-let restoreTimer = 0;
-const GRAVITY_HOLD = 800;
+let gravityTimer = 0, restoreTimer = 0, resetTimer = 0;
+const GRAVITY_HOLD = 800, RESET_HOLD = 1000, INTENT_HOLD = 500;
 let globalColorIndex = 0;
 let leftPeaceWasActive = false;
 const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500, 0x00ff7f, 0x40e0d0];
 
-let isGrabbing = false, grabTimer = 0;
-let grabOffset = new THREE.Vector3();
-let isBuilding = false, buildTimer = 0;
-let isErasing = false, eraseTimer = 0;
-let resetTimer = 0, rotateTimer = 0;
-let startPinchPos = null, activeAxis = null;
+let isBuilding = false, buildTimer = 0, eraseTimer = 0;
 let sketchKeys = new Set();
-const GRAB_HOLD = 500;
-const INTENT_HOLD = 500;
-const RESET_HOLD = 1000;
-const ROTATE_HOLD = 1000;
 const pinchThreshold = 0.05;
 
-// --- BIOMETRIC HUD RENDERER ---
+// --- HUD RENDERER ---
 function drawCyberHand(ctx, landmarks) {
     ctx.strokeStyle = "rgba(0, 240, 255, 0.5)";
     ctx.lineWidth = 2;
@@ -119,6 +110,7 @@ function drawHUDCircle(ctx, x, y, progress, color) {
 
 function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
 
+// --- CORE LOGIC: HAND REPLACEMENT ---
 function onResults(results) {
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
     crosshair.visible = false;
@@ -128,32 +120,37 @@ function onResults(results) {
     results.multiHandedness.forEach((hand, idx) => {
         const landmarks = results.multiHandLandmarks[idx];
         drawCyberHand(bioCtx, landmarks);
-        if(hand.label === 'Left') lHand = landmarks;
+        // MediaPipe labeling mirror fix
         if(hand.label === 'Right') rHand = landmarks;
+        if(hand.label === 'Left') lHand = landmarks;
     });
 
-    // --- GLOBAL COMMANDS (2 HANDS) ---
+    // 1. RESET LOGIC (BOTH HANDS FISTS)
     if (lHand && rHand) {
         const lFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const rFist = rHand[8].y > rHand[6].y && rHand[12].y > rHand[10].y;
         if (lFist && rFist) {
             resetTimer += 16;
             drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, resetTimer/RESET_HOLD, "#ff0055");
-            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText="RESET COMPLETE"; }
+            if (resetTimer >= RESET_HOLD) { 
+                voxelGroup.position.set(0,0,0); 
+                voxelGroup.rotation.set(0,0,0); 
+                modeEl.innerText="SYSTEM RESET"; 
+            }
             return;
         } else resetTimer = 0;
     }
 
-    // --- LEFT HAND LOGIC ---
+    // 2. LEFT HAND: CONTROLS (COLOR & GRAVITY)
     if (lHand) {
         const curled = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const isPeace = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y;
         
-        // Color Toggle
-        if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
-        else if (!isPeace) leftPeaceWasActive = false;
+        if (isPeace && !leftPeaceWasActive) { 
+            globalColorIndex = (globalColorIndex + 1) % colorPalette.length; 
+            leftPeaceWasActive = true; 
+        } else if (!isPeace) leftPeaceWasActive = false;
 
-        // Gravity/Restore
         if (lHand[4].y > lHand[3].y && curled) { // Thumb Down
             gravityTimer += 16;
             drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, gravityTimer/GRAVITY_HOLD, "#ff00ff");
@@ -167,7 +164,7 @@ function onResults(results) {
         } else restoreTimer = 0;
     }
 
-    // --- RIGHT HAND LOGIC ---
+    // 3. RIGHT HAND: CREATION (BUILD)
     if (rHand) {
         const isPeace = rHand[8].y < rHand[6].y && rHand[12].y < rHand[10].y && rHand[16].y > rHand[14].y;
         rainbowActive = isPeace;
@@ -180,18 +177,21 @@ function onResults(results) {
         const isPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
         const lPinching = lHand && getDist(lHand[4], lHand[8]) < pinchThreshold;
 
-        if (lPinching && !isPeace) { // Erase
+        // Erase: Left Pinch + Right Point
+        if (lPinching && !isPeace) { 
             eraseTimer += 16;
             drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, eraseTimer/INTENT_HOLD, "#ff3333");
             if (eraseTimer >= INTENT_HOLD) {
                 const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
                 if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
             }
-        } else if (isPinching) { // Build
+        } 
+        // Build: Right Pinch
+        else if (isPinching) { 
             buildTimer += 16;
             drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, buildTimer/INTENT_HOLD, "#00ffcc");
             if (buildTimer >= INTENT_HOLD) {
-                if (!isBuilding) { startPinchPos = {x:gx, y:gy}; isBuilding = true; sketchKeys.clear(); }
+                if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
                 addSketchVoxel(gx, gy, 0);
             }
         } else {
@@ -208,6 +208,7 @@ function onResults(results) {
     countEl.innerText = placedVoxels.size;
 }
 
+// --- HELPER FUNCTIONS ---
 function initiateGravityFall() {
     placedVoxels.forEach(v => { v.velocity.set((Math.random()-0.5)*0.8, 0.4+Math.random()*0.5, (Math.random()-0.5)*0.8); });
 }
