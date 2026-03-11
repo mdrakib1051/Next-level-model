@@ -2,35 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v15.0 - Ultra Stability</title>
+<title>Voxel Architect v13.0 - Fixed Gestures</title>
 <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
-    #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.45; filter: contrast(110%) saturate(120%); }
-    #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
-    #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
-
-    #ui {
-        position: absolute; top: 25px; left: 25px; z-index: 100;
-        color: #00f0ff; background: rgba(0, 10, 20, 0.7);
-        backdrop-filter: blur(10px); padding: 20px; border-radius: 12px;
-        border: 1px solid rgba(0, 240, 255, 0.4); box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
-    }
-    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #00f0ff; color: #000; font-weight: bold; font-size: 10px; margin-bottom: 10px; }
-    .cmd-list { font-size: 11px; color: #e0faff; line-height: 1.6; }
+body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+#input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.6; }
+#three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
+#biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
+#ui {
+position: absolute; top: 20px; left: 20px; z-index: 100;
+color: #00f0ff; font-weight: bold; font-size: 13px;
+text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
+background: rgba(0,0,0,0.8); padding: 15px; border-radius: 0 10px 10px 0;
+}
 </style>
 </head>
 <body>
 <div id="ui">
-    <div class="status-badge">STABILITY_LINK: ACTIVE</div>
-    <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">VOXEL_ARCHITECT CORE</div>
-    <div style="font-size: 10px; opacity: 0.7; margin-bottom: 15px;">VOXELS PLACED: <span id="count">0</span></div>
-    <div class="cmd-list">
-        ✊✊ ZOOM: FISTS (MOVE APART)<br>
-        ✋✋ MOVE: OPEN PALMS<br>
-        👌 BUILD: RIGHT PINCH<br>
-        ✌️ COLOR: LEFT PEACE<br>
-        ☝️👌 ERASE: L-POINT + R-PINCH
-    </div>
+<div>CORE_SYNC: ARCHITECT_v13.0</div>
+<hr style="border:0; border-top:1px solid #00f0ff; margin:10px 0;">
+<div style="color: #00ffcc;">👌 RIGHT PINCH: BUILD</div>
+<div style="color: #ffcc00;">✋✋ 2 PALMS: MOVE GROUP</div>
+<div style="color: #ff00ff;">✊✊ 2 FISTS: ZOOM (Move apart/closer)</div>
+<div style="color: #00ff00;">✌️ LEFT PEACE: COLOR</div>
+<div style="color: #ff3333;">☝️(L) + 👌(R): ERASE</div>
 </div>
 
 <video id="input_video" autoplay playsinline></video>
@@ -45,9 +39,7 @@
 const videoElement = document.getElementById('input_video');
 const bioCanvas = document.getElementById('biometric_canvas');
 const bioCtx = bioCanvas.getContext('2d');
-const countEl = document.getElementById('count');
 
-// --- THREE.JS ENGINE ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
@@ -58,28 +50,21 @@ scene.add(voxelGroup);
 const currentSketch = new THREE.Group();
 voxelGroup.add(currentSketch);
 
-// Static environment
-const gridFloor = new THREE.GridHelper(100, 50, 0x004444, 0x001111);
-gridFloor.position.y = -15;
-scene.add(gridFloor);
-
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-directionalLight.position.set(5, 10, 7.5);
-scene.add(directionalLight);
-
-camera.position.z = 40;
-
-// --- SMOTTHING & STABILITY LOGIC ---
-let smoothR = new THREE.Vector3();
-let initialHandDist = null, initialVoxelScale = 1;
-let initialMidpoint = null, initialGroupPos = new THREE.Vector3();
-let globalColorIndex = 0;
-const colorPalette = [0x00f0ff, 0x00ffcc, 0xff0055, 0x9900ff, 0xffff00];
 const gridSize = 1.2;
 const placedVoxels = new Map();
-const crosshair = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridSize), new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true }));
+const crosshair = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridSize), new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.5 }));
 scene.add(crosshair);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+camera.position.z = 30;
+
+let initialHandDist = null, initialVoxelScale = 1;
+let initialMidpoint = null, initialGroupPos = null;
+let globalColorIndex = 0, leftPeaceWasActive = false;
+const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff];
+let isBuilding = false, buildTimer = 0, eraseTimer = 0;
+let sketchKeys = new Set();
+const pinchThresh = 0.04;
 
 function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
 
@@ -97,71 +82,77 @@ function onResults(results) {
 
     const l = hands['Left'], r = hands['Right'];
 
-    // --- STABLE TWO-HAND LOGIC ---
     if (l && r) {
         const lFist = l[8].y > l[6].y && l[12].y > l[10].y && l[16].y > l[14].y;
         const rFist = r[8].y > r[6].y && r[12].y > r[10].y && r[16].y > r[14].y;
         const lOpen = l[8].y < l[6].y && l[12].y < l[10].y;
         const rOpen = r[8].y < r[6].y && r[12].y < r[10].y;
 
-        // Stable Zoom
+        // ZOOM: Two Fists ✊✊
         if (lFist && rFist) {
             const d = getDist(l[9], r[9]);
             if (initialHandDist === null) { initialHandDist = d; initialVoxelScale = voxelGroup.scale.x; }
             else { 
-                let targetScale = (d / initialHandDist) * initialVoxelScale;
-                voxelGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.2);
+                let s = (d / initialHandDist) * initialVoxelScale;
+                voxelGroup.scale.set(s, s, s);
             }
             return;
         } else initialHandDist = null;
 
-        // Stable Move
+        // MOVE: Two Open Palms ✋✋
         if (lOpen && rOpen && !lFist && !rFist) {
             const mid = { x: (l[9].x + r[9].x)/2, y: (l[9].y + r[9].y)/2 };
-            if (initialMidpoint === null) { initialMidpoint = mid; initialGroupPos.copy(voxelGroup.position); }
+            if (initialMidpoint === null) { initialMidpoint = mid; initialGroupPos = voxelGroup.position.clone(); }
             else {
-                let targetX = initialGroupPos.x + (initialMidpoint.x - mid.x) * 50;
-                let targetY = initialGroupPos.y + (initialMidpoint.y - mid.y) * 40;
-                voxelGroup.position.lerp(new THREE.Vector3(targetX, targetY, 0), 0.15);
+                voxelGroup.position.x = initialGroupPos.x + (initialMidpoint.x - mid.x) * 40;
+                voxelGroup.position.y = initialGroupPos.y + (initialMidpoint.y - mid.y) * 30;
             }
             return;
         } else initialMidpoint = null;
     }
 
-    // --- RIGHT HAND: BUILD (SMOOTHED) ---
     if (r) {
-        // Raw position to World
-        const targetWorldPos = new THREE.Vector3((0.5 - r[8].x) * 40, (0.5 - r[8].y) * 30, 0);
-        smoothR.lerp(targetWorldPos, 0.3); // Positional smoothing
-
-        const localPos = voxelGroup.worldToLocal(smoothR.clone());
+        const worldPos = new THREE.Vector3((0.5 - r[8].x) * 30, (0.5 - r[8].y) * 20, 0);
+        const localPos = voxelGroup.worldToLocal(worldPos.clone());
         let gx = Math.round(localPos.x / gridSize) * gridSize;
         let gy = Math.round(localPos.y / gridSize) * gridSize;
 
-        const rPinch = getDist(r[4], r[8]) < 0.04;
-        const lPoint = l && l[8].y < l[6].y && l[12].y > l[10].y;
+        const rPinch = getDist(r[4], r[8]) < pinchThresh;
+        const lPoint = l && l[8].y < l[6].y && l[12].y > l[10].y; // Left Index Pointing
 
         if (lPoint && rPinch) { // ERASE
-            const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
-            if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
+            eraseTimer += 16;
+            if (eraseTimer >= 500) {
+                const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
+                if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
+            }
         } else if (rPinch) { // BUILD
-            if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
-            addSketchVoxel(gx, gy, 0);
+            buildTimer += 16;
+            if (buildTimer >= 400) {
+                if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
+                addSketchVoxel(gx, gy, 0);
+            }
         } else {
             if (isBuilding) commitVoxels();
-            isBuilding = false;
+            isBuilding = false; buildTimer = 0; eraseTimer = 0;
         }
 
-        if (rPinch || lPoint) {
+        if (rPinch) {
             crosshair.visible = true;
             crosshair.position.copy(voxelGroup.localToWorld(new THREE.Vector3(gx, gy, 0)));
-            crosshair.material.color.set(lPoint ? 0xff3333 : colorPalette[globalColorIndex]);
+            crosshair.material.color.set(lPoint ? 0xff0000 : colorPalette[globalColorIndex]);
         }
+    }
+
+    if (l) {
+        const isPeace = l[8].y < l[6].y && l[12].y < l[10].y && l[16].y > l[14].y;
+        if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
+        else if (!isPeace) leftPeaceWasActive = false;
     }
 }
 
 function drawCyberHand(ctx, l) {
-    ctx.strokeStyle = "rgba(0, 240, 255, 0.5)"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "#00f0ff"; ctx.lineWidth = 2;
     [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]].forEach(([a,b])=>{
         ctx.beginPath(); ctx.moveTo(l[a].x*bioCanvas.width, l[a].y*bioCanvas.height); ctx.lineTo(l[b].x*bioCanvas.width, l[b].y*bioCanvas.height); ctx.stroke();
     });
@@ -184,25 +175,21 @@ function commitVoxels() {
         placedVoxels.set(`${f.position.x.toFixed(1)},${f.position.y.toFixed(1)},0.0`, cube);
         currentSketch.remove(f);
     }
-    countEl.innerText = placedVoxels.size;
 }
 
 function createFinalCube(x, y, z) {
     const g = new THREE.BoxGeometry(gridSize*0.9, gridSize*0.9, gridSize*0.9);
-    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.6, shininess: 50 });
+    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5 });
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(x, y, z);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] }));
-    mesh.add(edges);
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })));
     return mesh;
 }
 
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.85, minTrackingConfidence: 0.85 });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 hands.onResults(onResults);
-
 new Camera(videoElement, { onFrame: async () => { bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; await hands.send({image: videoElement}); }, width: 1280, height: 720 }).start();
-
 function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
 animate();
 </script>
