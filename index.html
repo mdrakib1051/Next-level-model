@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v11.5 - Rotation Fixed</title>
+<title>Voxel Architect v12.0 - Easy Rotate</title>
 <style>
 body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
@@ -19,11 +19,11 @@ background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 </head>
 <body>
 <div id="ui">
-<div>BIO_SYNC: ARCHITECT_OS_v11.5</div>
+<div>BIO_SYNC: ARCHITECT_OS_v12.0</div>
 <div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
 <div>VOXELS: <span id="count" class="stat-val">0</span></div>
 <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | 2 PALMS: ROTATE</div>
+<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | R-PALM: ROTATE</div>
 <div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
 <div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
 <div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE | R-PINCH: BUILD</div>
@@ -44,7 +44,6 @@ const bioCtx = bioCanvas.getContext('2d');
 const modeEl = document.getElementById('mode');
 const countEl = document.getElementById('count');
 
-// --- THREE.JS ENGINE ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
@@ -69,22 +68,17 @@ sun.position.set(5, 5, 5);
 scene.add(sun);
 camera.position.z = 25;
 
-// --- STATE & TIMERS ---
-let gravityEnabled = false;
-let rainbowActive = false;
-let gravityTimer = 0, restoreTimer = 0, resetTimer = 0, rotateTimer = 0;
+let gravityEnabled = false, rainbowActive = false;
+let gravityTimer = 0, restoreTimer = 0, resetTimer = 0;
 let buildTimer = 0, eraseTimer = 0;
-const GRAVITY_HOLD = 800, RESET_HOLD = 1000, ROTATE_HOLD = 600, INTENT_HOLD = 500;
-
-let globalColorIndex = 0;
-let leftPeaceWasActive = false;
-const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0xaa00ff, 0xffffff, 0x00ff00];
+let globalColorIndex = 0, leftPeaceWasActive = false;
+const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0xaa00ff, 0xffffff];
 const pinchThreshold = 0.05;
 
 let isBuilding = false;
 let sketchKeys = new Set();
+let lastHandX = 0, lastHandY = 0;
 
-// --- UI RENDERING ---
 function drawCyberHand(ctx, landmarks) {
     ctx.strokeStyle = "rgba(0, 240, 255, 0.4)";
     ctx.lineWidth = 2;
@@ -97,21 +91,17 @@ function drawCyberHand(ctx, landmarks) {
     });
     landmarks.forEach((pt, i) => {
         ctx.fillStyle = [4, 8, 12, 16, 20].includes(i) ? "#fff" : "#00f0ff";
-        ctx.beginPath();
-        ctx.arc(pt.x * bioCanvas.width, pt.y * bioCanvas.height, 3, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(pt.x * bioCanvas.width, pt.y * bioCanvas.height, 3, 0, Math.PI*2); ctx.fill();
     });
 }
 
 function drawHUDCircle(ctx, x, y, progress, color) {
-    ctx.beginPath();
-    ctx.arc(x, y, 40, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * progress));
+    ctx.beginPath(); ctx.arc(x, y, 40, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * progress));
     ctx.lineWidth = 6; ctx.strokeStyle = color; ctx.stroke();
 }
 
 function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
 
-// --- AI CORE RESULTS ---
 function onResults(results) {
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
     crosshair.visible = false;
@@ -125,84 +115,80 @@ function onResults(results) {
         else rHand = lm;
     });
 
-    // 1. GLOBAL COMMANDS (2 HANDS)
+    // 1. TWO HAND RESET
     if (lHand && rHand) {
         const lFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const rFist = rHand[8].y > rHand[6].y && rHand[12].y > rHand[10].y;
-        const lPalm = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y;
-        const rPalm = rHand[8].y < rHand[6].y && rHand[12].y < rHand[10].y;
-
         if (lFist && rFist) {
             resetTimer += 16;
-            drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, resetTimer/RESET_HOLD, "#ff0055");
-            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText="RESET DONE"; }
+            drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, resetTimer/1000, "#ff0055");
+            if (resetTimer >= 1000) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText="RESET DONE"; }
             return;
         } else resetTimer = 0;
-
-        if (lPalm && rPalm) {
-            rotateTimer += 16;
-            drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, Math.min(rotateTimer/ROTATE_HOLD, 1), "#00f0ff");
-            if (rotateTimer >= ROTATE_HOLD) {
-                modeEl.innerText = "ROTATING";
-                voxelGroup.rotation.y += (rHand[0].x - lHand[0].x - 0.5) * 0.12;
-                voxelGroup.rotation.x += (rHand[0].y + lHand[0].y - 1.0) * 0.12;
-            }
-            return;
-        } else rotateTimer = 0;
     }
 
     // 2. LEFT HAND (GRAVITY & COLOR)
     if (lHand) {
         const curled = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
         const isPeace = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y;
-        
         if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
         else if (!isPeace) leftPeaceWasActive = false;
 
-        if (lHand[4].y > lHand[3].y && curled) { // Thumb Down
+        if (lHand[4].y > lHand[3].y && curled) {
             gravityTimer += 16;
-            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, gravityTimer/GRAVITY_HOLD, "#ff00ff");
-            if (gravityTimer >= GRAVITY_HOLD) { gravityEnabled = true; initiateGravityFall(); }
+            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, gravityTimer/800, "#ff00ff");
+            if (gravityTimer >= 800) { gravityEnabled = true; initiateGravityFall(); }
         } else gravityTimer = 0;
 
-        if (lHand[4].y < lHand[3].y && curled) { // Thumb Up
+        if (lHand[4].y < lHand[3].y && curled) {
             restoreTimer += 16;
-            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, restoreTimer/GRAVITY_HOLD, "#00ff88");
-            if (restoreTimer >= GRAVITY_HOLD) gravityEnabled = false;
+            drawHUDCircle(bioCtx, lHand[4].x*bioCanvas.width, lHand[4].y*bioCanvas.height, restoreTimer/800, "#00ff88");
+            if (restoreTimer >= 800) gravityEnabled = false;
         } else restoreTimer = 0;
     }
 
-    // 3. RIGHT HAND (BUILD, ERASE, DISCO)
+    // 3. RIGHT HAND (BUILD, ERASE, DISCO, ROTATE)
     if (rHand) {
-        const isPeace = rHand[8].y < rHand[6].y && rHand[12].y < rHand[10].y && rHand[16].y > rHand[14].y;
+        const indexTip = rHand[8], thumbTip = rHand[4], midTip = rHand[12], ringTip = rHand[16];
+        const isPalm = indexTip.y < rHand[6].y && midTip.y < rHand[10].y && ringTip.y < rHand[14].y;
+        const isPeace = indexTip.y < rHand[6].y && midTip.y < rHand[10].y && ringTip.y > rHand[14].y;
+        const isPinching = getDist(thumbTip, indexTip) < pinchThreshold;
+        
         rainbowActive = isPeace;
 
-        const worldPos = new THREE.Vector3((0.5 - rHand[8].x) * 28, (0.5 - rHand[8].y) * 20, 0);
+        // ROTATION LOGIC (ONLY IF PALM IS OPEN)
+        if (isPalm && !isPeace && !isPinching) {
+            modeEl.innerText = "ROTATING";
+            voxelGroup.rotation.y += (indexTip.x - lastHandX) * 5;
+            voxelGroup.rotation.x += (indexTip.y - lastHandY) * 5;
+        }
+        lastHandX = indexTip.x; lastHandY = indexTip.y;
+
+        const worldPos = new THREE.Vector3((0.5 - indexTip.x) * 28, (0.5 - indexTip.y) * 20, 0);
         const localPos = voxelGroup.worldToLocal(worldPos.clone());
         let gx = Math.round(localPos.x / gridSize) * gridSize;
         let gy = Math.round(localPos.y / gridSize) * gridSize;
 
-        const isPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
         const lPinching = lHand && getDist(lHand[4], lHand[8]) < pinchThreshold;
 
-        if (lPinching) { // Erase Mode
+        if (lPinching) {
             eraseTimer += 16;
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, eraseTimer/INTENT_HOLD, "#ff3333");
-            if (eraseTimer >= INTENT_HOLD) {
+            drawHUDCircle(bioCtx, indexTip.x*bioCanvas.width, indexTip.y*bioCanvas.height, eraseTimer/500, "#ff3333");
+            if (eraseTimer >= 500) {
                 const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
                 if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
             }
-        } else if (isPinching) { // Build Mode
+        } else if (isPinching) {
             buildTimer += 16;
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, buildTimer/INTENT_HOLD, "#00ffcc");
-            if (buildTimer >= INTENT_HOLD) {
+            drawHUDCircle(bioCtx, indexTip.x*bioCanvas.width, indexTip.y*bioCanvas.height, buildTimer/500, "#00ffcc");
+            if (buildTimer >= 500) {
                 if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
                 addSketchVoxel(gx, gy, 0);
             }
         } else {
             if (isBuilding) commitVoxels();
             isBuilding = false; buildTimer = 0; eraseTimer = 0;
-            modeEl.innerText = "IDLE";
+            if(!isPalm) modeEl.innerText = "IDLE";
         }
 
         if (isBuilding || buildTimer > 0 || eraseTimer > 0) {
@@ -265,9 +251,8 @@ function animate() {
     }
     placedVoxels.forEach((v) => {
         if (gravityEnabled) {
-            v.velocity.y -= 0.03;
-            v.position.add(v.velocity);
-            if (v.position.y < -12) { v.position.y = -12; v.velocity.y *= -0.25; v.velocity.x *= 0.9; }
+            v.velocity.y -= 0.03; v.position.add(v.velocity);
+            if (v.position.y < -12) { v.position.y = -12; v.velocity.y *= -0.25; }
         } else { v.position.lerp(v.origin, 0.12); v.velocity.set(0,0,0); }
     });
     renderer.render(scene, camera);
