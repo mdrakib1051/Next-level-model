@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voxel Architect - Master Sync v5.5</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; }
+        #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
+        #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            color: #00f0ff; font-weight: bold; font-size: 14px;
+            text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
+            background: rgba(0,0,0,0.6); padding: 15px;
+        }
+        .stat-val { color: #fff; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>BIO_SYNC: VOXEL_MASTER_v5.5</div>
+        <div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
+        <div>VOXELS: <span id="count" class="stat-val">0</span></div>
+        <div style="font-size: 10px; margin-top: 5px; color: #ff3333;">2 FISTS: RESET | 2 PALMS: ROTATE</div>
+        <div style="font-size: 10px; color: #00ff00;">L-PEACE: CHANGE COLOR | R-PEACE: DISCO</div>
+        <div style="font-size: 10px; color: #ff00ff;">L-THUMB DOWN: BURST | L-THUMB UP: RESTORE</div>
+    </div>
+
+    <video id="input_video" autoplay playsinline></video>
+    <canvas id="three_canvas"></canvas>
+    <canvas id="biometric_canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const bioCanvas = document.getElementById('biometric_canvas');
+        const bioCtx = bioCanvas.getContext('2d');
+        const modeEl = document.getElementById('mode');
+        const countEl = document.getElementById('count');
+
+        // Three.js Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        const voxelGroup = new THREE.Group();
+        scene.add(voxelGroup);
+        const currentSketch = new THREE.Group();
+        voxelGroup.add(currentSketch);
+
+        const gridSize = 1.2; 
+        const placedVoxels = new Map();
+        
+        const crosshair = new THREE.Mesh(
+            new THREE.BoxGeometry(gridSize, gridSize, gridSize),
+            new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.5 })
+        );
+        scene.add(crosshair);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+        sun.position.set(5, 5, 5);
+        scene.add(sun);
+        camera.position.z = 25;
+
+        // States
+        let smoothedLandmarks = { Left: [], Right: [] };
+        let gravityEnabled = false;
+        let rainbowActive = false;
+        let globalColorIndex = 0;
+        const colorPalette = [0x00f0ff, 0xff0000, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500];
+
+        // Gesture Timers
+        let timers = { reset: 0, rotate: 0, gravity: 0, restore: 0, build: 0, erase: 0, grab: 0 };
+        const HOLD_TIME = 800;
+        const pinchThreshold = 0.05;
+
+        function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
+
+        function onResults(results) {
+            bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
+            crosshair.visible = false;
+            if (!results.multiHandLandmarks) return;
+
+            let lHand = null, rHand = null;
+            results.multiHandedness.forEach((hand, idx) => {
+                const landmarks = results.multiHandLandmarks[idx];
+                drawCyberHand(bioCtx, landmarks, hand.label);
+                if(hand.label === 'Left') lHand = landmarks;
+                if(hand.label === 'Right') rHand = landmarks;
+            });
+
+            // Logic for 2 Hands (Reset / Rotate)
+            if (lHand && rHand) {
+                const lFist = isFist(lHand); const rFist = isFist(rHand);
+                if (lFist && rFist) {
+                    timers.reset += 16;
+                    if(timers.reset > 1000) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText = "RESET COMPLETE"; }
+                    return;
+                } else timers.reset = 0;
+            }
+
+            // Logic for Right Hand (Build / Erase)
+            if (rHand) {
+                const worldPos = new THREE.Vector3((0.5 - rHand[8].x) * 30, (0.5 - rHand[8].y) * 20, 0);
+                const localPos = voxelGroup.worldToLocal(worldPos.clone());
+                let gx = Math.round(localPos.x / gridSize) * gridSize;
+                let gy = Math.round(localPos.y / gridSize) * gridSize;
+
+                if (getDist(rHand[4], rHand[8]) < pinchThreshold) {
+                    addVoxel(gx, gy, 0);
+                    modeEl.innerText = "BUILDING...";
+                }
+            }
+
+            // Logic for Left Hand (Gravity / Color)
+            if (lHand) {
+                if (lHand[4].y > lHand[3].y && isFist(lHand)) { // Thumb Down
+                    gravityEnabled = true; initiateGravity();
+                    modeEl.innerText = "GRAVITY ACTIVE";
+                }
+                if (lHand[4].y < lHand[3].y && isFist(lHand)) { // Thumb Up
+                    gravityEnabled = false;
+                    modeEl.innerText = "RESTORED";
+                }
+            }
+        }
+
+        function isFist(h) { return h[8].y > h[6].y && h[12].y > h[10].y; }
+
+        function addVoxel(x, y, z) {
+            const key = `${x},${y},${z}`;
+            if (placedVoxels.has(key)) return;
+            const cube = new THREE.Mesh(
+                new THREE.BoxGeometry(gridSize*0.9, gridSize*0.9, gridSize*0.9),
+                new THREE.MeshPhongMaterial({ color: colorPalette[globalColorIndex], emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5 })
+            );
+            cube.position.set(x, y, z);
+            cube.origin = new THREE.Vector3(x, y, z);
+            cube.velocity = new THREE.Vector3(0, 0, 0);
+            voxelGroup.add(cube);
+            placedVoxels.set(key, cube);
+            countEl.innerText = placedVoxels.size;
+        }
+
+        function initiateGravity() {
+            placedVoxels.forEach(v => { v.velocity.y = -0.1 - Math.random() * 0.2; });
+        }
+
+        function drawCyberHand(ctx, pts, label) {
+            ctx.strokeStyle = "#00f0ff"; ctx.lineWidth = 2;
+            ctx.beginPath();
+            pts.forEach(p => ctx.rect(p.x * bioCanvas.width, p.y * bioCanvas.height, 2, 2));
+            ctx.stroke();
+        }
+
+        const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8 });
+        hands.onResults(onResults);
+        new Camera(videoElement, { onFrame: async () => { 
+            bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight;
+            await hands.send({image: videoElement}); 
+        }}).start();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            placedVoxels.forEach(v => {
+                if (gravityEnabled) {
+                    v.position.add(v.velocity);
+                    if(v.position.y < -10) v.velocity.y = 0;
+                } else {
+                    v.position.lerp(v.origin, 0.1);
+                }
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
