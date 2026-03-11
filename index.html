@@ -2,38 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Voxel Architect - Absolute Cyber Edition v8.0</title>
+    <title>Voxel Architect - Absolute Fix v9.0</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-        #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.6; }
+        #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; }
         #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
         #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
-        
-        #scanner_overlay {
-            position: absolute; width: 100vw; height: 100vh; z-index: 2;
-            background: linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
-            background-size: 30px 30px; pointer-events: none;
-        }
-
         #ui { 
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            color: #00f0ff; font-weight: bold; font-size: 12px;
-            text-shadow: 0 0 10px #00f0ff; background: rgba(0,0,0,0.8);
-            padding: 15px; border-left: 3px solid #00f0ff;
+            color: #00f0ff; background: rgba(0,0,0,0.8); padding: 15px;
+            border-left: 4px solid #00f0ff; text-shadow: 0 0 5px #00f0ff;
         }
+        #loading_msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00f0ff; z-index: 1000; font-size: 20px; }
     </style>
 </head>
 <body>
-    <div id="scanner_overlay"></div>
+    <div id="loading_msg">LOADING AI MODELS... PLEASE WAIT</div>
     <div id="ui">
-        <div>SYSTEM_OS: v8.0_ULTIMATE</div>
-        <div>STATUS: <span id="mode" style="color:#fff">CALIBRATING</span></div>
-        <div>TOTAL_VOXELS: <span id="count" style="color:#fff">0</span></div>
-        <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-        <div style="font-size: 9px; color: #00ffcc;">• R-PINCH: BUILD | L-FIST + R-PINCH: ERASE</div>
-        <div style="font-size: 9px; color: #ff00ff;">• L-THUMB: GRAVITY CONTROL</div>
-        <div style="font-size: 9px; color: #00ff00;">• PEACE SIGN: COLOR & DISCO</div>
+        <div>SYSTEM: Voxel_OS_v9.0</div>
+        <div>STATE: <span id="mode" style="color:white">STARTING...</span></div>
+        <div>BLOCKS: <span id="count" style="color:white">0</span></div>
     </div>
 
     <video id="input_video" autoplay playsinline></video>
@@ -50,129 +38,104 @@
         const bioCtx = bioCanvas.getContext('2d');
         const modeEl = document.getElementById('mode');
         const countEl = document.getElementById('count');
+        const loadingMsg = document.getElementById('loading_msg');
 
+        // 1. Three.js Engine
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.position.z = 25;
 
         const voxelGroup = new THREE.Group();
         scene.add(voxelGroup);
-        camera.position.z = 25;
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-        const sun = new THREE.DirectionalLight(0x00f0ff, 1);
-        sun.position.set(5, 10, 5);
-        scene.add(sun);
-
-        let gravityEnabled = false;
-        let globalColorIndex = 0;
-        const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0x9933ff];
         const placedVoxels = new Map();
+        let gravityEnabled = false;
 
-        // হাতের লাইনগুলো আঁকার ফাংশন
-        function drawHandMesh(ctx, landmarks) {
-            ctx.strokeStyle = "rgba(0, 240, 255, 0.5)";
-            ctx.lineWidth = 2;
+        // 2. Hand Drawing (Landmarks)
+        function drawHand(landmarks) {
+            bioCtx.strokeStyle = "#00f0ff";
+            bioCtx.lineWidth = 3;
             const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-            
             connections.forEach(([a, b]) => {
-                ctx.beginPath();
-                ctx.moveTo(landmarks[a].x * bioCanvas.width, landmarks[a].y * bioCanvas.height);
-                ctx.lineTo(landmarks[b].x * bioCanvas.width, landmarks[b].y * bioCanvas.height);
-                ctx.stroke();
+                bioCtx.beginPath();
+                bioCtx.moveTo(landmarks[a].x * bioCanvas.width, landmarks[a].y * bioCanvas.height);
+                bioCtx.lineTo(landmarks[b].x * bioCanvas.width, landmarks[b].y * bioCanvas.height);
+                bioCtx.stroke();
             });
-
-            landmarks.forEach((p, i) => {
-                ctx.fillStyle = i === 8 || i === 4 ? "#fff" : "#00f0ff";
-                ctx.beginPath();
-                ctx.arc(p.x * bioCanvas.width, p.y * bioCanvas.height, 3, 0, Math.PI * 2);
-                ctx.fill();
+            landmarks.forEach(p => {
+                bioCtx.fillStyle = "#fff";
+                bioCtx.beginPath(); bioCtx.arc(p.x * bioCanvas.width, p.y * bioCanvas.height, 4, 0, Math.PI*2); bioCtx.fill();
             });
         }
 
+        // 3. Voxel Creation
         function createVoxel(x, y, z) {
             const geo = new THREE.BoxGeometry(1.1, 1.1, 1.1);
-            const mat = new THREE.MeshPhongMaterial({ 
-                color: colorPalette[globalColorIndex], transparent: true, opacity: 0.5,
-                emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.3
-            });
+            const mat = new THREE.MeshPhongMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.6, emissive: 0x00f0ff, emissiveIntensity: 0.3 });
             const mesh = new THREE.Mesh(geo, mat);
-            const line = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] }));
-            mesh.add(line);
+            mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x00f0ff })));
             mesh.position.set(x, y, z);
             mesh.origin = new THREE.Vector3(x, y, z);
             mesh.velocity = new THREE.Vector3(0,0,0);
             return mesh;
         }
 
+        // 4. Main AI Results
         function onResults(results) {
+            loadingMsg.style.display = 'none';
             bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
-            if (!results.multiHandLandmarks) return;
+            if (!results.multiHandLandmarks) { modeEl.innerText = "SEARCHING..."; return; }
 
             let lHand = null, rHand = null;
             results.multiHandedness.forEach((hand, i) => {
-                const landmarks = results.multiHandLandmarks[i];
-                drawHandMesh(bioCtx, landmarks);
-                if(hand.label === 'Left') lHand = landmarks;
-                if(hand.label === 'Right') rHand = landmarks;
+                const lm = results.multiHandLandmarks[i];
+                drawHand(lm);
+                if(hand.label === 'Left') lHand = lm;
+                else rHand = lm;
             });
-
-            if (lHand) {
-                const isFist = lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
-                if (isFist) {
-                    if (lHand[4].y > lHand[3].y) gravityEnabled = true;
-                    if (lHand[4].y < lHand[3].y) gravityEnabled = false;
-                }
-                // Color Change: Peace Sign
-                if (lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y) {
-                    globalColorIndex = (globalColorIndex + 1) % colorPalette.length;
-                }
-            }
 
             if (rHand) {
                 const gx = Math.round(((0.5 - rHand[8].x) * 35) / 1.2) * 1.2;
                 const gy = Math.round(((0.5 - rHand[8].y) * 25) / 1.2) * 1.2;
-                const pz = Math.round((-rHand[8].z * 25) / 1.2) * 1.2;
-                const key = `${gx},${gy},${pz}`;
+                const gz = Math.round((-rHand[8].z * 20) / 1.2) * 1.2;
+                const key = `${gx},${gy},${gz}`;
 
                 const pinching = Math.hypot(rHand[8].x - rHand[4].x, rHand[8].y - rHand[4].y) < 0.05;
-                const isEraseMode = lHand && lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
+                const eraseMode = lHand && lHand[8].y > lHand[6].y && lHand[12].y > lHand[10].y;
 
                 if (pinching) {
-                    if (isEraseMode) {
+                    if (eraseMode) {
                         if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
                         modeEl.innerText = "ERASING";
-                    } else {
-                        if (!placedVoxels.has(key)) {
-                            const v = createVoxel(gx, gy, pz);
-                            voxelGroup.add(v); placedVoxels.set(key, v);
-                        }
+                    } else if (!placedVoxels.has(key)) {
+                        const v = createVoxel(gx, gy, gz);
+                        voxelGroup.add(v); placedVoxels.set(key, v);
                         modeEl.innerText = "BUILDING";
                     }
-                } else {
-                    modeEl.innerText = "SCANNING";
-                }
+                } else { modeEl.innerText = eraseMode ? "ERASER ACTIVE" : "SCANNING"; }
             }
             countEl.innerText = placedVoxels.size;
         }
 
+        // 5. Initialize MediaPipe
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8 });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.75, minTrackingConfidence: 0.75 });
         hands.onResults(onResults);
-        new Camera(videoElement, { onFrame: async () => { 
-            bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight;
-            await hands.send({image: videoElement}); 
-        }}).start();
 
-        function animate() {
-            requestAnimationFrame(animate);
-            placedVoxels.forEach(v => {
-                if (gravityEnabled) { v.velocity.y -= 0.02; v.position.add(v.velocity); if(v.position.y < -12) v.velocity.y = 0; }
-                else { v.position.lerp(v.origin, 0.1); v.velocity.set(0,0,0); }
-            });
-            renderer.render(scene, camera);
-        }
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                bioCanvas.width = videoElement.videoWidth;
+                bioCanvas.height = videoElement.videoHeight;
+                await hands.send({image: videoElement});
+            },
+            width: 1280, height: 720
+        });
+        cameraUtils.start();
+
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
     </script>
 </body>
