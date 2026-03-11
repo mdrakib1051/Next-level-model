@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v12.0 - Move & Zoom</title>
+<title>Voxel Architect v13.0 - Fixed Gestures</title>
 <style>
 body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.6; }
@@ -12,22 +12,19 @@ body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New'
 position: absolute; top: 20px; left: 20px; z-index: 100;
 color: #00f0ff; font-weight: bold; font-size: 13px;
 text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
-background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
+background: rgba(0,0,0,0.8); padding: 15px; border-radius: 0 10px 10px 0;
 }
-.stat-val { color: #fff; }
 </style>
 </head>
 <body>
 <div id="ui">
-<div>CORE_SYNC: ARCHITECT_v12.0</div>
-<div>STATE: <span id="mode" class="stat-val">READY</span></div>
-<div>VOXELS: <span id="count" class="stat-val">0</span></div>
-<hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-<div style="font-size: 10px; color: #00ffcc;">RIGHT PINCH: BUILD</div>
-<div style="font-size: 10px; color: #ffcc00;">2 OPEN PALMS: MOVE GROUP</div>
-<div style="font-size: 10px; color: #ff00ff;">2 PINCHES: ZOOM IN/OUT</div>
-<div style="font-size: 9px; color: #00ff00;">L-PEACE: CHANGE COLOR</div>
-<div style="font-size: 9px; color: #ff3333;">L-PINCH + R-POINT: ERASE</div>
+<div>CORE_SYNC: ARCHITECT_v13.0</div>
+<hr style="border:0; border-top:1px solid #00f0ff; margin:10px 0;">
+<div style="color: #00ffcc;">👌 RIGHT PINCH: BUILD</div>
+<div style="color: #ffcc00;">✋✋ 2 PALMS: MOVE GROUP</div>
+<div style="color: #ff00ff;">✊✊ 2 FISTS: ZOOM (Move apart/closer)</div>
+<div style="color: #00ff00;">✌️ LEFT PEACE: COLOR</div>
+<div style="color: #ff3333;">☝️(L) + 👌(R): ERASE</div>
 </div>
 
 <video id="input_video" autoplay playsinline></video>
@@ -42,10 +39,7 @@ background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 const videoElement = document.getElementById('input_video');
 const bioCanvas = document.getElementById('biometric_canvas');
 const bioCtx = bioCanvas.getContext('2d');
-const modeEl = document.getElementById('mode');
-const countEl = document.getElementById('count');
 
-// --- THREE.JS ENGINE ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
@@ -58,33 +52,19 @@ voxelGroup.add(currentSketch);
 
 const gridSize = 1.2;
 const placedVoxels = new Map();
-const crosshair = new THREE.Mesh(
-    new THREE.BoxGeometry(gridSize, gridSize, gridSize),
-    new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.5 })
-);
+const crosshair = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridSize), new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.5 }));
 scene.add(crosshair);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-sun.position.set(5, 5, 5);
-scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 camera.position.z = 30;
 
-// --- STATE VARIABLES ---
-let gravityEnabled = false;
-let rainbowActive = false;
-let initialHandDist = null;
-let initialVoxelScale = 1;
-let initialGroupPos = null;
-let initialMidpoint = null;
-
-let globalColorIndex = 0;
-let leftPeaceWasActive = false;
-const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500];
-
+let initialHandDist = null, initialVoxelScale = 1;
+let initialMidpoint = null, initialGroupPos = null;
+let globalColorIndex = 0, leftPeaceWasActive = false;
+const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff];
 let isBuilding = false, buildTimer = 0, eraseTimer = 0;
 let sketchKeys = new Set();
-const pinchThreshold = 0.05;
+const pinchThresh = 0.04;
 
 function getDist(p1, p2) { return Math.sqrt(Math.pow(p1.x-p2.x,2)+Math.pow(p1.y-p2.y,2)); }
 
@@ -100,80 +80,55 @@ function onResults(results) {
         hands[hand.label] = landmarks;
     });
 
-    const lHand = hands['Left'];
-    const rHand = hands['Right'];
+    const l = hands['Left'], r = hands['Right'];
 
-    // --- MOVE & ZOOM LOGIC (TWO HANDS) ---
-    if (lHand && rHand) {
-        const lPinching = getDist(lHand[4], lHand[8]) < pinchThreshold;
-        const rPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
-        const lOpen = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y < lHand[14].y;
-        const rOpen = rHand[8].y < rHand[6].y && rHand[12].y < rHand[10].y && rHand[16].y < rHand[14].y;
+    if (l && r) {
+        const lFist = l[8].y > l[6].y && l[12].y > l[10].y && l[16].y > l[14].y;
+        const rFist = r[8].y > r[6].y && r[12].y > r[10].y && r[16].y > r[14].y;
+        const lOpen = l[8].y < l[6].y && l[12].y < l[10].y;
+        const rOpen = r[8].y < r[6].y && r[12].y < r[10].y;
 
-        // 1. ZOOM (Two hand pinching)
-        if (lPinching && rPinching) {
-            const currentDist = getDist(lHand[8], rHand[8]);
-            if (initialHandDist === null) {
-                initialHandDist = currentDist;
-                initialVoxelScale = voxelGroup.scale.x;
-                modeEl.innerText = "ZOOMING";
-            } else {
-                let scaleFactor = currentDist / initialHandDist;
-                let newScale = Math.max(0.1, Math.min(5, initialVoxelScale * scaleFactor));
-                voxelGroup.scale.set(newScale, newScale, newScale);
+        // ZOOM: Two Fists ✊✊
+        if (lFist && rFist) {
+            const d = getDist(l[9], r[9]);
+            if (initialHandDist === null) { initialHandDist = d; initialVoxelScale = voxelGroup.scale.x; }
+            else { 
+                let s = (d / initialHandDist) * initialVoxelScale;
+                voxelGroup.scale.set(s, s, s);
             }
             return;
-        } else { initialHandDist = null; }
+        } else initialHandDist = null;
 
-        // 2. MOVE GROUP (Two open palms)
-        if (lOpen && rOpen && !lPinching && !rPinching) {
-            const midpoint = { 
-                x: (lHand[9].x + rHand[9].x) / 2, 
-                y: (lHand[9].y + rHand[9].y) / 2 
-            };
-            if (initialMidpoint === null) {
-                initialMidpoint = midpoint;
-                initialGroupPos = voxelGroup.position.clone();
-                modeEl.innerText = "MOVING GROUP";
-            } else {
-                voxelGroup.position.x = initialGroupPos.x + (initialMidpoint.x - midpoint.x) * 40;
-                voxelGroup.position.y = initialGroupPos.y + (initialMidpoint.y - midpoint.y) * 30;
+        // MOVE: Two Open Palms ✋✋
+        if (lOpen && rOpen && !lFist && !rFist) {
+            const mid = { x: (l[9].x + r[9].x)/2, y: (l[9].y + r[9].y)/2 };
+            if (initialMidpoint === null) { initialMidpoint = mid; initialGroupPos = voxelGroup.position.clone(); }
+            else {
+                voxelGroup.position.x = initialGroupPos.x + (initialMidpoint.x - mid.x) * 40;
+                voxelGroup.position.y = initialGroupPos.y + (initialMidpoint.y - mid.y) * 30;
             }
-            return; 
-        } else { initialMidpoint = null; }
+            return;
+        } else initialMidpoint = null;
     }
 
-    // --- LEFT HAND: COLOR ---
-    if (lHand) {
-        const isPeace = lHand[8].y < lHand[6].y && lHand[12].y < lHand[10].y && lHand[16].y > lHand[14].y;
-        if (isPeace && !leftPeaceWasActive) { 
-            globalColorIndex = (globalColorIndex + 1) % colorPalette.length; 
-            leftPeaceWasActive = true; 
-        } else if (!isPeace) leftPeaceWasActive = false;
-    }
-
-    // --- RIGHT HAND: BUILD/ERASE ---
-    if (rHand) {
-        modeEl.innerText = "ACTIVE";
-        const worldPos = new THREE.Vector3((0.5 - rHand[8].x) * 30, (0.5 - rHand[8].y) * 20, 0);
+    if (r) {
+        const worldPos = new THREE.Vector3((0.5 - r[8].x) * 30, (0.5 - r[8].y) * 20, 0);
         const localPos = voxelGroup.worldToLocal(worldPos.clone());
         let gx = Math.round(localPos.x / gridSize) * gridSize;
         let gy = Math.round(localPos.y / gridSize) * gridSize;
 
-        const rPinching = getDist(rHand[4], rHand[8]) < pinchThreshold;
-        const lPinching = lHand && getDist(lHand[4], lHand[8]) < pinchThreshold;
+        const rPinch = getDist(r[4], r[8]) < pinchThresh;
+        const lPoint = l && l[8].y < l[6].y && l[12].y > l[10].y; // Left Index Pointing
 
-        if (lPinching && !rPinching) { // ERASE
+        if (lPoint && rPinch) { // ERASE
             eraseTimer += 16;
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, eraseTimer/500, "#ff3333");
             if (eraseTimer >= 500) {
                 const key = `${gx.toFixed(1)},${gy.toFixed(1)},0.0`;
                 if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
             }
-        } else if (rPinching) { // BUILD
+        } else if (rPinch) { // BUILD
             buildTimer += 16;
-            drawHUDCircle(bioCtx, rHand[8].x*bioCanvas.width, rHand[8].y*bioCanvas.height, buildTimer/500, "#00ffcc");
-            if (buildTimer >= 500) {
+            if (buildTimer >= 400) {
                 if (!isBuilding) { isBuilding = true; sketchKeys.clear(); }
                 addSketchVoxel(gx, gy, 0);
             }
@@ -182,32 +137,25 @@ function onResults(results) {
             isBuilding = false; buildTimer = 0; eraseTimer = 0;
         }
 
-        if (isBuilding || buildTimer > 0 || eraseTimer > 0) {
+        if (rPinch) {
             crosshair.visible = true;
             crosshair.position.copy(voxelGroup.localToWorld(new THREE.Vector3(gx, gy, 0)));
-            crosshair.material.color.set(eraseTimer > 0 ? 0xff3333 : colorPalette[globalColorIndex]);
+            crosshair.material.color.set(lPoint ? 0xff0000 : colorPalette[globalColorIndex]);
         }
     }
-    countEl.innerText = placedVoxels.size;
+
+    if (l) {
+        const isPeace = l[8].y < l[6].y && l[12].y < l[10].y && l[16].y > l[14].y;
+        if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
+        else if (!isPeace) leftPeaceWasActive = false;
+    }
 }
 
-// --- CORE UTILS ---
-function drawCyberHand(ctx, landmarks) {
-    ctx.strokeStyle = "rgba(0, 240, 255, 0.4)";
-    ctx.lineWidth = 2;
-    const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-    CONNECTIONS.forEach(([a, b]) => {
-        ctx.beginPath();
-        ctx.moveTo(landmarks[a].x * bioCanvas.width, landmarks[a].y * bioCanvas.height);
-        ctx.lineTo(landmarks[b].x * bioCanvas.width, landmarks[b].y * bioCanvas.height);
-        ctx.stroke();
+function drawCyberHand(ctx, l) {
+    ctx.strokeStyle = "#00f0ff"; ctx.lineWidth = 2;
+    [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]].forEach(([a,b])=>{
+        ctx.beginPath(); ctx.moveTo(l[a].x*bioCanvas.width, l[a].y*bioCanvas.height); ctx.lineTo(l[b].x*bioCanvas.width, l[b].y*bioCanvas.height); ctx.stroke();
     });
-}
-
-function drawHUDCircle(ctx, x, y, progress, color) {
-    ctx.beginPath();
-    ctx.arc(x, y, 30, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * Math.min(progress, 1)));
-    ctx.lineWidth = 4; ctx.strokeStyle = color; ctx.stroke();
 }
 
 function addSketchVoxel(x, y, z) {
@@ -231,7 +179,7 @@ function commitVoxels() {
 
 function createFinalCube(x, y, z) {
     const g = new THREE.BoxGeometry(gridSize*0.9, gridSize*0.9, gridSize*0.9);
-    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5, transparent: true, opacity: 0.8 });
+    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5 });
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(x, y, z);
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })));
@@ -239,17 +187,10 @@ function createFinalCube(x, y, z) {
 }
 
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 hands.onResults(onResults);
-new Camera(videoElement, { onFrame: async () => { 
-    bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; 
-    await hands.send({image: videoElement}); 
-}, width: 1280, height: 720 }).start();
-
-function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-}
+new Camera(videoElement, { onFrame: async () => { bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; await hands.send({image: videoElement}); }, width: 1280, height: 720 }).start();
+function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
 animate();
 </script>
 </body>
