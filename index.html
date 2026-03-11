@@ -2,31 +2,31 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v11.6 - Stable Zoom</title>
+<title>Voxel Architect v11.9 - Final Master</title>
 <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-    #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
-    #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
-    #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
-    #ui {
-        position: absolute; top: 20px; left: 20px; z-index: 100;
-        color: #00f0ff; font-weight: bold; font-size: 13px;
-        text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
-        background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
-    }
-    .stat-val { color: #fff; }
+body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+#input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
+#three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
+#biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
+#ui {
+position: absolute; top: 20px; left: 20px; z-index: 100;
+color: #00f0ff; font-weight: bold; font-size: 13px;
+text-shadow: 0 0 10px #00f0ff; border-left: 3px solid #00f0ff; padding-left: 15px;
+background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
+}
+.stat-val { color: #fff; }
 </style>
 </head>
 <body>
 <div id="ui">
-    <div>CORE_SYNC: HYBRID_OS_v11.6</div>
-    <div>STATE: <span id="mode" class="stat-val">ACTIVE</span></div>
-    <div>VOXELS: <span id="count" class="stat-val">0</span></div>
-    <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-    <div style="font-size: 9px; color: #00ffcc;">✊✊ 2 FISTS: ZOOM (IN/OUT)</div>
-    <div style="font-size: 9px; color: #ff3333;">✋✋ 2 PALMS (FACE-TO-FACE): RESET</div>
-    <div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
-    <div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
+<div>CORE_SYNC: MASTER_OS_v11.9</div>
+<div>VOXELS: <span id="count" class="stat-val">0</span></div>
+<hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
+<div style="font-size: 10px; color: #00ff00;">✋✋ 2 PALMS: ZOOM IN/OUT (দূর-কাছ কর)</div>
+<div style="font-size: 10px; color: #ff3333;">✊✊ 2 FISTS: RESET ALL</div>
+<div style="font-size: 10px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
+<div style="font-size: 10px; color: #00f0ff;">L-PEACE: COLOR | R-PEACE: DISCO</div>
+<div style="font-size: 10px; color: #ffff00;">L-PINCH + R-POINT: ERASE</div>
 </div>
 
 <video id="input_video" autoplay playsinline></video>
@@ -41,7 +41,6 @@
 const videoElement = document.getElementById('input_video');
 const bioCanvas = document.getElementById('biometric_canvas');
 const bioCtx = bioCanvas.getContext('2d');
-const modeEl = document.getElementById('mode');
 const countEl = document.getElementById('count');
 
 // --- THREE.JS ENGINE ---
@@ -61,25 +60,18 @@ const crosshair = new THREE.Mesh(new THREE.BoxGeometry(gridSize, gridSize, gridS
 scene.add(crosshair);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.PointLight(0xffffff, 1.2);
+const sun = new THREE.PointLight(0xffffff, 1);
 sun.position.set(10, 10, 10);
 scene.add(sun);
-camera.position.z = 30;
+camera.position.z = 35;
 
 // --- STATE ---
 let gravityEnabled = false, rainbowActive = false;
 let globalColorIndex = 0, leftPeaceWasActive = false;
-const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff];
+const colorPalette = [0x00f0ff, 0xff0000, 0x0000ff, 0x00ff00, 0xffff00, 0xff00ff, 0xffa500];
 let initialHandDist = null, initialVoxelScale = 1;
-let resetTimer = 0;
-const RESET_HOLD = 1000;
-
-function drawCyberHand(ctx, lm) {
-    ctx.strokeStyle = "rgba(0, 240, 255, 0.4)"; ctx.lineWidth = 2;
-    [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]].forEach(([a, b]) => {
-        ctx.beginPath(); ctx.moveTo(lm[a].x * bioCanvas.width, lm[a].y * bioCanvas.height); ctx.lineTo(lm[b].x * bioCanvas.width, lm[b].y * bioCanvas.height); ctx.stroke();
-    });
-}
+let buildTimer = 0, eraseTimer = 0, resetTimer = 0;
+const INTENT_HOLD = 400, RESET_HOLD = 1000;
 
 function onResults(results) {
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
@@ -89,73 +81,111 @@ function onResults(results) {
     let l = null, r = null;
     results.multiHandedness.forEach((hand, idx) => {
         const lm = results.multiHandLandmarks[idx];
-        drawCyberHand(bioCtx, lm);
+        drawSkeleton(bioCtx, lm);
         if(hand.label === 'Left') l = lm; if(hand.label === 'Right') r = lm;
     });
 
+    // 1. ZOOM & RESET LOGIC (2 HANDS)
     if (l && r) {
         const lFist = l[8].y > l[6].y && l[12].y > l[10].y;
         const rFist = r[8].y > r[6].y && r[12].y > r[10].y;
         const lOpen = l[8].y < l[6].y && l[12].y < l[10].y;
         const rOpen = r[8].y < r[6].y && r[12].y < r[10].y;
 
-        // ZOOM (✊✊)
+        // Reset with Fists (✊✊)
         if (lFist && rFist) {
+            resetTimer += 16;
+            if (resetTimer >= RESET_HOLD) { voxelGroup.position.set(0,0,0); voxelGroup.scale.set(1,1,1); resetTimer = 0; }
+        } else resetTimer = 0;
+
+        // Zoom with Open Palms (✋✋)
+        if (lOpen && rOpen && !lFist && !rFist) {
             const d = Math.hypot(l[9].x - r[9].x, l[9].y - r[9].y);
             if (initialHandDist === null) { initialHandDist = d; initialVoxelScale = voxelGroup.scale.x; }
             else {
                 let s = (d / initialHandDist) * initialVoxelScale;
                 voxelGroup.scale.set(s, s, s);
             }
-            resetTimer = 0; // Prevent reset during zoom
         } else initialHandDist = null;
-
-        // RESET (✋✋ Face to Face)
-        if (lOpen && rOpen && !lFist && !rFist) {
-            resetTimer += 16;
-            if (resetTimer >= RESET_HOLD) {
-                voxelGroup.position.set(0,0,0); voxelGroup.scale.set(1,1,1);
-                modeEl.innerText = "RESET!"; resetTimer = 0;
-            }
-        } else resetTimer = 0;
     }
 
-    if (r && !l) { // Build Logic
+    // 2. LEFT HAND: BURST/RESTORE/COLOR
+    if (l) {
+        const isPeace = l[8].y < l[6].y && l[12].y < l[10].y && l[16].y > l[14].y;
+        if (isPeace && !leftPeaceWasActive) { globalColorIndex = (globalColorIndex + 1) % colorPalette.length; leftPeaceWasActive = true; }
+        else if (!isPeace) leftPeaceWasActive = false;
+
+        const curled = l[8].y > l[6].y && l[12].y > l[10].y;
+        if (l[4].y > l[3].y && curled) gravityEnabled = true; // Thumb Down
+        if (l[4].y < l[3].y && curled) gravityEnabled = false; // Thumb Up
+    }
+
+    // 3. RIGHT HAND: DRAW/ERASE/DISCO
+    if (r) {
+        rainbowActive = r[8].y < r[6].y && r[12].y < r[10].y && r[16].y < r[14].y && r[20].y < r[18].y; // Peace or Disco? Let's use Peace for simplicity
+        rainbowActive = r[8].y < r[6].y && r[12].y < r[10].y && r[16].y > r[14].y; 
+
         const worldPos = new THREE.Vector3((0.5 - r[8].x) * 30, (0.5 - r[8].y) * 22, 0);
         const localPos = voxelGroup.worldToLocal(worldPos.clone());
         let gx = Math.round(localPos.x / gridSize) * gridSize;
         let gy = Math.round(localPos.y / gridSize) * gridSize;
-        
-        if (Math.hypot(r[4].x-r[8].x, r[4].y-r[8].y) < 0.05) {
+
+        const isPinching = Math.hypot(r[4].x-r[8].x, r[4].y-r[8].y) < 0.05;
+        const lPinching = l && Math.hypot(l[4].x-l[8].x, l[4].y-l[8].y) < 0.05;
+
+        if (lPinching && !isPinching) { // Erase
+            const key = `${gx.toFixed(1)},${gy.toFixed(1)}`;
+            if (placedVoxels.has(key)) { voxelGroup.remove(placedVoxels.get(key)); placedVoxels.delete(key); }
+        } else if (isPinching) { // Build
             const key = `${gx.toFixed(1)},${gy.toFixed(1)}`;
             if (!placedVoxels.has(key)) {
-                const cube = createFinalCube(gx, gy, 0);
+                const cube = createCube(gx, gy);
                 voxelGroup.add(cube);
                 placedVoxels.set(key, cube);
             }
+        }
+        
+        if (isPinching || lPinching) {
+            crosshair.visible = true;
+            crosshair.position.copy(voxelGroup.localToWorld(new THREE.Vector3(gx, gy, 0)));
+            crosshair.material.color.set(lPinching ? 0xff0000 : colorPalette[globalColorIndex]);
         }
     }
     countEl.innerText = placedVoxels.size;
 }
 
-function createFinalCube(x, y, z) {
+function createCube(x, y) {
     const g = new THREE.BoxGeometry(gridSize*0.95, gridSize*0.95, gridSize*0.95);
-    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.5 });
+    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.6 });
     const mesh = new THREE.Mesh(g, m);
-    mesh.position.set(x, y, z);
-    mesh.origin = new THREE.Vector3(x, y, z);
-    mesh.velocity = new THREE.Vector3(0,0,0);
+    mesh.position.set(x, y, 0);
+    mesh.origin = new THREE.Vector3(x, y, 0);
+    mesh.velocity = new THREE.Vector3((Math.random()-0.5)*0.2, Math.random()*0.5, (Math.random()-0.5)*0.2);
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })));
     return mesh;
 }
 
+function drawSkeleton(ctx, lm) {
+    ctx.strokeStyle = "#00f0ff"; ctx.lineWidth = 1.5;
+    [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]].forEach(([a,b])=>{
+        ctx.beginPath(); ctx.moveTo(lm[a].x*bioCanvas.width, lm[a].y*bioCanvas.height); ctx.lineTo(lm[b].x*bioCanvas.width, lm[b].y*bioCanvas.height); ctx.stroke();
+    });
+}
+
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.75, minTrackingConfidence: 0.75 });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 hands.onResults(onResults);
 new Camera(videoElement, { onFrame: async () => { bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; await hands.send({image: videoElement}); }, width: 1280, height: 720 }).start();
 
 function animate() {
     requestAnimationFrame(animate);
+    placedVoxels.forEach(v => {
+        if (gravityEnabled) {
+            v.velocity.y -= 0.02; v.position.add(v.velocity);
+            if (v.position.y < -15) { v.position.y = -15; v.velocity.y *= -0.3; }
+        } else { v.position.lerp(v.origin, 0.1); v.velocity.set(0,0.5,0); }
+        if (rainbowActive) v.material.emissive.setHSL((Date.now()%2000)/2000, 1, 0.5);
+    });
     renderer.render(scene, camera);
 }
 animate();
