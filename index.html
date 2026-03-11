@@ -2,41 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v18.0 - Precision Sync</title>
+<title>Voxel Architect v17.0 - Stability Fix</title>
 <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
     #input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.5; }
     #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
     #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
-    
-    /* UI Design */
     #ui {
         position: absolute; top: 20px; left: 20px; z-index: 100;
-        color: #00f0ff; background: rgba(0, 10, 20, 0.8);
-        padding: 15px; border-radius: 8px; border-left: 4px solid #00f0ff;
+        color: #00f0ff; background: rgba(0, 15, 30, 0.85);
+        padding: 20px; border-radius: 12px; border: 1px solid #00f0ff;
     }
-    
-    /* Refresh Bar */
-    #refresh_container {
-        position: absolute; bottom: 0; left: 0; width: 100%; height: 4px;
-        background: rgba(255, 255, 255, 0.1); z-index: 101;
-    }
-    #refresh_bar {
-        width: 0%; height: 100%; background: #00f0ff;
-        box-shadow: 0 0 10px #00f0ff; transition: width 0.1s linear;
-    }
-    .hint { font-size: 10px; color: #fff; margin-top: 4px; opacity: 0.8; }
+    .hint { color: #fff; font-size: 11px; margin-top: 5px; }
 </style>
 </head>
 <body>
-
 <div id="ui">
-    <div style="font-weight: bold; letter-spacing: 1px;">SYSTEM_CORE_v18.0</div>
-    <div id="status" style="font-size: 11px; color: #00ffcc;">SCANNING...</div>
-    <div class="hint">👌 PINCH FINGERTIP TO DRAW</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00f0ff; padding-bottom: 5px;">DEBUG MODE: ACTIVE</div>
+    <div class="hint">👌 <b>RIGHT PINCH:</b> DRAW (একদম আঙুল ছোঁয়াবি)</div>
+    <div class="hint">✋✋ <b>2 PALMS:</b> MOVE ALL</div>
+    <div class="hint">✊✊ <b>2 FISTS:</b> ZOOM (সামনে পিছনে নে)</div>
+    <div class="hint">✌️ <b>LEFT PEACE:</b> COLOR</div>
+    <div class="hint">👎 <b>L-THUMB DOWN:</b> EXPLODE</div>
+    <div class="hint">👍 <b>L-THUMB UP:</b> RESTORE</div>
 </div>
-
-<div id="refresh_container"><div id="refresh_bar"></div></div>
 
 <video id="input_video" autoplay playsinline></video>
 <canvas id="three_canvas"></canvas>
@@ -50,10 +39,7 @@
 const videoElement = document.getElementById('input_video');
 const bioCanvas = document.getElementById('biometric_canvas');
 const bioCtx = bioCanvas.getContext('2d');
-const refreshBar = document.getElementById('refresh_bar');
-const statusEl = document.getElementById('status');
 
-// --- THREE.JS ENGINE ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
@@ -63,54 +49,62 @@ const voxelGroup = new THREE.Group();
 scene.add(voxelGroup);
 camera.position.z = 40;
 
-const gridSize = 1.0; // Slightly smaller for precision
+const gridSize = 1.2;
 const placedVoxels = new Map();
+let gravityMode = false;
 let globalColorIndex = 0;
 const colorPalette = [0x00f0ff, 0xff0055, 0x00ff88, 0xffff00];
 
-// --- FINGER-TIP BUILDER ---
+// --- SMOOTHING ---
+let smoothHandPos = new THREE.Vector3();
+
 function onResults(results) {
     bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
-    
-    // Refresh Bar Logic
-    let progress = (Date.now() % 1000) / 10;
-    refreshBar.style.width = progress + "%";
-
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-        statusEl.innerText = "HAND NOT DETECTED";
-        statusEl.style.color = "#ff3333";
-        return;
-    }
-
-    statusEl.innerText = "SYNCED";
-    statusEl.style.color = "#00ffcc";
+    if (!results.multiHandLandmarks) return;
 
     let hands = {};
     results.multiHandedness.forEach((hand, idx) => {
-        hands[hand.label] = results.multiHandLandmarks[idx];
-        drawSkeleton(bioCtx, results.multiHandLandmarks[idx]);
+        const landmarks = results.multiHandLandmarks[idx];
+        drawHand(bioCtx, landmarks);
+        hands[hand.label] = landmarks;
     });
 
-    const r = hands['Right'];
-    const l = hands['Left'];
+    const l = hands['Left'], r = hands['Right'];
 
-    // BUILD LOGIC: তর্জনীর ডগায় ড্র হবে
+    // 1. Move & Zoom (Stability fix)
+    if (l && r) {
+        const lFist = l[8].y > l[6].y && l[12].y > l[10].y;
+        const rFist = r[8].y > r[6].y && r[12].y > r[10].y;
+        if (lFist && rFist) {
+            const d = Math.hypot(l[9].x - r[9].x, l[9].y - r[9].y);
+            let s = d * 5; // Simpler scaling
+            voxelGroup.scale.lerp(new THREE.Vector3(s, s, s), 0.1);
+        }
+    }
+
+    // 2. Physics (Thumb logic)
+    if (l) {
+        const isThumbDown = l[4].y > l[3].y && l[8].y > l[6].y;
+        const isThumbUp = l[4].y < l[3].y && l[8].y > l[6].y;
+        if (isThumbDown) gravityMode = true;
+        if (isThumbUp) gravityMode = false;
+        
+        if (l[8].y < l[6].y && l[12].y < l[10].y && l[16].y > l[14].y) {
+            globalColorIndex = (globalColorIndex + 1) % colorPalette.length;
+        }
+    }
+
+    // 3. Build (Right Hand)
     if (r) {
-        const indexTip = r[8]; // Index Finger Tip
-        const thumbTip = r[4]; // Thumb Tip
+        const target = new THREE.Vector3((0.5 - r[8].x) * 40, (0.5 - r[8].y) * 30, 0);
+        smoothHandPos.lerp(target, 0.2);
 
-        // তর্জনীর পজিশন সরাসরি ওয়ার্ল্ড কোঅর্ডিনেটে কনভার্ট
-        const tx = (0.5 - indexTip.x) * 45; 
-        const ty = (0.5 - indexTip.y) * 35;
-        
-        const localPos = voxelGroup.worldToLocal(new THREE.Vector3(tx, ty, 0));
-        let gx = Math.round(localPos.x / gridSize) * gridSize;
-        let gy = Math.round(localPos.y / gridSize) * gridSize;
+        const localP = voxelGroup.worldToLocal(smoothHandPos.clone());
+        let gx = Math.round(localP.x / gridSize) * gridSize;
+        let gy = Math.round(localP.y / gridSize) * gridSize;
 
-        // Pinch Detection: আঙুল দুটো একদম কাছে থাকলে
-        const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-        
-        if (dist < 0.04) {
+        const isPinching = Math.hypot(r[4].x - r[8].x, r[4].y - r[8].y) < 0.05;
+        if (isPinching) {
             const key = `${gx.toFixed(1)},${gy.toFixed(1)}`;
             if (!placedVoxels.has(key)) {
                 const cube = createCube(gx, gy);
@@ -119,63 +113,45 @@ function onResults(results) {
             }
         }
     }
-    
-    // Color/Utility: Left Hand
-    if (l) {
-        // Peace sign to change color
-        if (l[8].y < l[6].y && l[12].y < l[10].y && l[16].y > l[14].y) {
-            if (Date.now() % 20 === 0) globalColorIndex = (globalColorIndex + 1) % colorPalette.length;
-        }
-    }
 }
 
 function createCube(x, y) {
-    const g = new THREE.BoxGeometry(gridSize*0.95, gridSize*0.95, gridSize*0.95);
-    const m = new THREE.MeshPhongMaterial({ 
-        color: 0x000000, 
-        emissive: colorPalette[globalColorIndex], 
-        emissiveIntensity: 1 
-    });
+    const g = new THREE.BoxGeometry(gridSize*0.9, gridSize*0.9, gridSize*0.9);
+    const m = new THREE.MeshPhongMaterial({ color: 0x001122, emissive: colorPalette[globalColorIndex], emissiveIntensity: 0.8 });
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(x, y, 0);
-    
-    const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(g), 
-        new THREE.LineBasicMaterial({ color: colorPalette[globalColorIndex] })
-    );
-    mesh.add(edges);
+    mesh.origin = new THREE.Vector3(x, y, 0);
+    mesh.velocity = new THREE.Vector3((Math.random()-0.5)*0.2, 0, 0);
     return mesh;
 }
 
-function drawSkeleton(ctx, lm) {
-    ctx.strokeStyle = "rgba(0, 240, 255, 0.5)"; ctx.lineWidth = 1.5;
+function drawHand(ctx, lm) {
+    ctx.strokeStyle = "#00f0ff"; ctx.lineWidth = 2;
     [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[9,10],[10,11],[11,12],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]].forEach(([a,b])=>{
         ctx.beginPath(); ctx.moveTo(lm[a].x*bioCanvas.width, lm[a].y*bioCanvas.height); ctx.lineTo(lm[b].x*bioCanvas.width, lm[b].y*bioCanvas.height); ctx.stroke();
     });
 }
 
-// --- INITIALIZATION ---
 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
 hands.onResults(onResults);
-
-new Camera(videoElement, { onFrame: async () => { 
-    bioCanvas.width = videoElement.videoWidth; 
-    bioCanvas.height = videoElement.videoHeight; 
-    await hands.send({image: videoElement}); 
-}, width: 1280, height: 720 }).start();
+new Camera(videoElement, { onFrame: async () => { bioCanvas.width = videoElement.videoWidth; bioCanvas.height = videoElement.videoHeight; await hands.send({image: videoElement}); }, width: 1280, height: 720 }).start();
 
 function animate() {
     requestAnimationFrame(animate);
+    placedVoxels.forEach(v => {
+        if (gravityMode) {
+            v.velocity.y -= 0.01;
+            v.position.add(v.velocity);
+            if (v.position.y < -20) { v.position.y = -20; v.velocity.y *= -0.2; }
+        } else {
+            v.position.lerp(v.origin, 0.1);
+            v.velocity.set(0,0,0);
+        }
+    });
     renderer.render(scene, camera);
 }
 animate();
-
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
 </script>
 </body>
 </html>
