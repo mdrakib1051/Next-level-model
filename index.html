@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Voxel Architect v12.0 - Easy Rotate</title>
+<title>Voxel Architect v13.0 - Smooth Control</title>
 <style>
 body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-#input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.65; }
+#input_video { position: absolute; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); z-index: 1; opacity: 0.6; }
 #three_canvas { position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; }
 #biometric_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 10; transform: scaleX(-1); pointer-events: none; }
 #ui {
@@ -19,11 +19,11 @@ background: rgba(0,0,0,0.7); padding: 15px; border-radius: 0 10px 10px 0;
 </head>
 <body>
 <div id="ui">
-<div>BIO_SYNC: ARCHITECT_OS_v12.0</div>
+<div>BIO_SYNC: ARCHITECT_OS_v13.0</div>
 <div>STATE: <span id="mode" class="stat-val">INITIALIZING</span></div>
 <div>VOXELS: <span id="count" class="stat-val">0</span></div>
 <hr style="border:0; border-top:1px solid rgba(0,240,255,0.3); margin:10px 0;">
-<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | R-PALM: ROTATE</div>
+<div style="font-size: 9px; color: #ff3333;">2 FISTS: RESET | R-PALM: SMOOTH ROTATE</div>
 <div style="font-size: 9px; color: #ff00ff;">L-THUMB DOWN: BURST | UP: RESTORE</div>
 <div style="font-size: 9px; color: #00ff00;">L-PEACE: COLOR | R-PEACE: DISCO</div>
 <div style="font-size: 9px; color: #00f0ff;">L-PINCH + R-POINT: ERASE | R-PINCH: BUILD</div>
@@ -44,6 +44,7 @@ const bioCtx = bioCanvas.getContext('2d');
 const modeEl = document.getElementById('mode');
 const countEl = document.getElementById('count');
 
+// --- THREE.JS ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three_canvas'), antialias: true, alpha: true });
@@ -68,16 +69,21 @@ sun.position.set(5, 5, 5);
 scene.add(sun);
 camera.position.z = 25;
 
+// --- STATE ---
 let gravityEnabled = false, rainbowActive = false;
 let gravityTimer = 0, restoreTimer = 0, resetTimer = 0;
 let buildTimer = 0, eraseTimer = 0;
 let globalColorIndex = 0, leftPeaceWasActive = false;
-const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0xaa00ff, 0xffffff];
+const colorPalette = [0x00f0ff, 0xff3366, 0x00ffcc, 0xffcc00, 0xaa00ff];
 const pinchThreshold = 0.05;
 
 let isBuilding = false;
 let sketchKeys = new Set();
-let lastHandX = 0, lastHandY = 0;
+
+// ROTATION SMOOTHING
+let targetRotationX = 0, targetRotationY = 0;
+let currentRotationX = 0, currentRotationY = 0;
+const lerpFactor = 0.08; // স্মুথনেসের মাত্রা
 
 function drawCyberHand(ctx, landmarks) {
     ctx.strokeStyle = "rgba(0, 240, 255, 0.4)";
@@ -122,7 +128,10 @@ function onResults(results) {
         if (lFist && rFist) {
             resetTimer += 16;
             drawHUDCircle(bioCtx, bioCanvas.width/2, bioCanvas.height/2, resetTimer/1000, "#ff0055");
-            if (resetTimer >= 1000) { voxelGroup.position.set(0,0,0); voxelGroup.rotation.set(0,0,0); modeEl.innerText="RESET DONE"; }
+            if (resetTimer >= 1000) { 
+                targetRotationX = 0; targetRotationY = 0; 
+                voxelGroup.position.set(0,0,0); modeEl.innerText="RESET DONE"; 
+            }
             return;
         } else resetTimer = 0;
     }
@@ -147,22 +156,23 @@ function onResults(results) {
         } else restoreTimer = 0;
     }
 
-    // 3. RIGHT HAND (BUILD, ERASE, DISCO, ROTATE)
+    // 3. RIGHT HAND (BUILD, ERASE, DISCO, SMOOTH ROTATE)
     if (rHand) {
-        const indexTip = rHand[8], thumbTip = rHand[4], midTip = rHand[12], ringTip = rHand[16];
-        const isPalm = indexTip.y < rHand[6].y && midTip.y < rHand[10].y && ringTip.y < rHand[14].y;
+        const indexTip = rHand[8], thumbTip = rHand[4], midTip = rHand[12], ringTip = rHand[16], pinkyTip = rHand[20];
+        
+        // Palm Open Check (All fingers up)
+        const isPalm = indexTip.y < rHand[6].y && midTip.y < rHand[10].y && ringTip.y < rHand[14].y && pinkyTip.y < rHand[18].y;
         const isPeace = indexTip.y < rHand[6].y && midTip.y < rHand[10].y && ringTip.y > rHand[14].y;
         const isPinching = getDist(thumbTip, indexTip) < pinchThreshold;
         
         rainbowActive = isPeace;
 
-        // ROTATION LOGIC (ONLY IF PALM IS OPEN)
+        // --- SMOOTH ROTATION LOGIC ---
         if (isPalm && !isPeace && !isPinching) {
-            modeEl.innerText = "ROTATING";
-            voxelGroup.rotation.y += (indexTip.x - lastHandX) * 5;
-            voxelGroup.rotation.x += (indexTip.y - lastHandY) * 5;
+            modeEl.innerText = "SMOOTH_ROTATE";
+            targetRotationY += (indexTip.x - 0.5) * 0.08; 
+            targetRotationX += (indexTip.y - 0.5) * 0.08;
         }
-        lastHandX = indexTip.x; lastHandY = indexTip.y;
 
         const worldPos = new THREE.Vector3((0.5 - indexTip.x) * 28, (0.5 - indexTip.y) * 20, 0);
         const localPos = voxelGroup.worldToLocal(worldPos.clone());
@@ -244,6 +254,11 @@ new Camera(videoElement, { onFrame: async () => {
 
 function animate() {
     requestAnimationFrame(animate);
+
+    // SMOOTH ROTATION APPLY
+    voxelGroup.rotation.y += (targetRotationY - voxelGroup.rotation.y) * lerpFactor;
+    voxelGroup.rotation.x += (targetRotationX - voxelGroup.rotation.x) * lerpFactor;
+
     if (rainbowActive) {
         placedVoxels.forEach(v => { v.material.emissive.setHSL(Math.random(), 1, 0.5); v.material.emissiveIntensity = 2; });
     } else {
