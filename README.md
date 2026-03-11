@@ -10,7 +10,8 @@ A gesture-controlled 3D voxel editor built **from scratch** for the web.
 - **Z-Axis Control**: Build in true 3D space with depth.
 
 ## 🖐️ Gesture Guide
-(এখানে তোমার ইমেজটি অ্যাড করো)
+<img width="1000" height="425" alt="image" src="https://github.com/user-attachments/assets/8cfe4964-b275-4bf6-a0c7-0cefa6ce037a" />
+
 
 | Gesture | Action |
 | :--- | :--- |
